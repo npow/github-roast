@@ -471,7 +471,7 @@ async def job_page(job_id: str):
 
       function linkifyRefText(text) {{
         let out = escHtml(text);
-        const refRe = /(^|[^A-Za-z0-9-])([A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\\/[A-Za-z0-9._-]+)(?:\\s+#(\\d+))?/g;
+        const refRe = /(^|[\\s(\\[])([A-Za-z][A-Za-z0-9-]{0,38}\\/[A-Za-z0-9._-]+)(?:\\s+#(\\d+))?/g;
         out = out.replace(refRe, (m, prefix, repo, pr) => {{
           if (pr) {{
             return `${{prefix}}<a href="https://github.com/${{repo}}/pull/${{pr}}" target="_blank" class="hover:underline text-blue-300">${{repo}} #${{pr}}</a>`;
