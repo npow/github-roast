@@ -7,6 +7,7 @@ Shared by webapp.py (async routes) and analyze.py (CLI via asyncio.run).
 
 import asyncio
 import json
+import os
 import re
 import time
 from datetime import datetime, timezone
@@ -14,7 +15,8 @@ from typing import Any
 
 import anthropic
 
-RELAY_URL = "http://localhost:18082"
+RELAY_URL = os.getenv("ANTHROPIC_BASE_URL", "http://localhost:18082")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "unused")
 MODEL = "claude-sonnet-4-6"
 MAINTAINERS = {"npow", "romain-intel", "saikonen", "mt-ob", "dpoznik", "dependabot[bot]"}
 
@@ -23,7 +25,7 @@ LLM_CACHE_TTL = 24 * 3600
 
 
 def _llm_client() -> anthropic.Anthropic:
-    return anthropic.Anthropic(base_url=RELAY_URL, api_key="unused")
+    return anthropic.Anthropic(base_url=RELAY_URL, api_key=ANTHROPIC_API_KEY)
 
 
 def _is_retryable(exc: Exception) -> bool:

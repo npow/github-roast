@@ -109,6 +109,44 @@ class Database:
     async def get_job(self, job_id: str) -> dict | None:
         return await asyncio.get_event_loop().run_in_executor(None, self._get_job_sync, job_id)
 
+    def _list_recent_jobs_sync(self, limit: int = 20) -> list[dict]:
+        rows = self._conn().execute(
+            "SELECT id, type, status, input, created_at, updated_at FROM jobs "
+            "ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        out: list[dict] = []
+        for row in rows:
+            d = dict(row)
+            d["input"] = json.loads(d["input"]) if d["input"] else {}
+            out.append(d)
+        return out
+
+    async def list_recent_jobs(self, limit: int = 20) -> list[dict]:
+        return await asyncio.get_event_loop().run_in_executor(None, self._list_recent_jobs_sync, limit)
+
+    def _find_latest_single_job_sync(self, username: str, repo: str = "") -> dict | None:
+        rows = self._conn().execute(
+            "SELECT * FROM jobs WHERE type='single' ORDER BY updated_at DESC LIMIT 500"
+        ).fetchall()
+        wanted_user = (username or "").strip().lower()
+        wanted_repo = (repo or "").strip()
+        for row in rows:
+            d = dict(row)
+            inp = json.loads(d["input"]) if d.get("input") else {}
+            job_user = (inp.get("username") or "").strip().lower()
+            job_repo = (inp.get("repo") or "").strip()
+            if job_user == wanted_user and job_repo == wanted_repo:
+                d["input"] = inp
+                d["result"] = json.loads(d["result"]) if d.get("result") else None
+                return d
+        return None
+
+    async def find_latest_single_job(self, username: str, repo: str = "") -> dict | None:
+        return await asyncio.get_event_loop().run_in_executor(
+            None, self._find_latest_single_job_sync, username, repo
+        )
+
     # ── Cache ─────────────────────────────────────────────────────────────────
 
     def _cache_get_sync(self, key: str) -> Any | None:

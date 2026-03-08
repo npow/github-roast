@@ -1,0 +1,62 @@
+name: Deploy Hetzner
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-hetzner-recon
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      APP_DIR: /root/github-roast
+      APP_PORT: "8011"
+      SERVICE_NAME: github-roast
+      DOMAIN_NAME: gh-roast.deeprecon.app
+      CADDY_REPO_DIR: /root/recon
+      CADDY_CONTAINER: recon-caddy-1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_HOST"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Sync app to server
+        env:
+          SSH_HOST: ${{ secrets.HETZNER_HOST }}
+          SSH_USER: ${{ secrets.HETZNER_USER }}
+        run: |
+          test -n "$SSH_USER"
+          rsync -az --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude '.venv' \
+            --exclude '__pycache__' \
+            ./ "$SSH_USER@$SSH_HOST:$APP_DIR/"
+
+      - name: Run remote deploy
+        env:
+          SSH_HOST: ${{ secrets.HETZNER_HOST }}
+          SSH_USER: ${{ secrets.HETZNER_USER }}
+          CLIPROXY_BASE_URL: ${{ secrets.CLIPROXY_BASE_URL }}
+          CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
+          DEPLOY_GH_TOKEN: ${{ secrets.DEPLOY_GH_TOKEN }}
+        run: |
+          EFFECTIVE_CLIPROXY_BASE_URL="${CLIPROXY_BASE_URL:-http://127.0.0.1:8317}"
+          ssh "$SSH_USER@$SSH_HOST" \
+            "APP_DIR='$APP_DIR' SERVICE_NAME='$SERVICE_NAME' DOMAIN_NAME='$DOMAIN_NAME' APP_PORT='$APP_PORT' CADDY_REPO_DIR='$CADDY_REPO_DIR' CADDY_CONTAINER='$CADDY_CONTAINER' CLIPROXY_BASE_URL='$EFFECTIVE_CLIPROXY_BASE_URL' CLIPROXY_API_KEY='$CLIPROXY_API_KEY' GH_TOKEN='$DEPLOY_GH_TOKEN' bash '$APP_DIR/scripts/deploy_remote.sh'"

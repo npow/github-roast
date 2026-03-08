@@ -5,7 +5,9 @@ Uses the `gh` CLI for all GitHub API calls (no OAuth needed).
 
 import asyncio
 import json
+import re
 from typing import AsyncIterator
+from urllib.parse import quote_plus
 
 from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
@@ -13,7 +15,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Stre
 from analyzer import analyze_bulk, analyze_single_user
 from db import db
 
-app = FastAPI(title="GitHub Portfolio Intelligence")
+app = FastAPI(title="GitHub Roast")
 
 
 @app.on_event("startup")
@@ -78,13 +80,16 @@ async def run_job(job_id: str, job_type: str, input_data: dict):
 TAILWIND = '<script src="https://cdn.tailwindcss.com"></script>'
 
 PAGE = """<!DOCTYPE html>
-<html lang="en" class="h-full bg-gray-950">
+<html lang="en" class="h-full">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{title} — GitHub Portfolio Intelligence</title>
+<title>{title} — GitHub Roast</title>
 {tailwind}
 <style>
+  :root {{
+    color-scheme: light dark;
+  }}
   body {{ font-family: ui-sans-serif, system-ui, sans-serif; }}
   .badge-strong-yes  {{ background:#16a34a;color:#fff; }}
   .badge-yes         {{ background:#4ade80;color:#14532d; }}
@@ -95,17 +100,70 @@ PAGE = """<!DOCTYPE html>
   .log-line          {{ font-family:ui-monospace,monospace;font-size:.8rem;color:#a3e635;padding:1px 0; }}
   @keyframes pdot    {{ 0%,100%{{opacity:1}}50%{{opacity:.3}} }}
   .pulse-dot         {{ animation:pdot 1.2s ease-in-out infinite;display:inline-block;width:8px;height:8px;border-radius:50%;background:#4ade80;margin-right:6px; }}
+  [data-theme="light"] .bg-gray-950 {{ background:#f8fafc !important; }}
+  [data-theme="light"] .bg-gray-900,
+  [data-theme="light"] .bg-gray-900\\/50,
+  [data-theme="light"] .bg-gray-900\\/60,
+  [data-theme="light"] .bg-gray-900\\/80,
+  [data-theme="light"] .bg-gray-800,
+  [data-theme="light"] .bg-gray-800\\/40,
+  [data-theme="light"] .bg-gray-800\\/50 {{ background:#ffffff !important; }}
+  [data-theme="light"] .border-gray-800,
+  [data-theme="light"] .border-gray-700,
+  [data-theme="light"] .border-gray-600 {{ border-color:#d1d5db !important; }}
+  [data-theme="light"] .text-gray-100,
+  [data-theme="light"] .text-gray-300 {{ color:#111827 !important; }}
+  [data-theme="light"] .text-gray-400,
+  [data-theme="light"] .text-gray-500 {{ color:#4b5563 !important; }}
+  [data-theme="light"] input,
+  [data-theme="light"] select,
+  [data-theme="light"] textarea {{
+    color:#111827 !important;
+    background:#fff !important;
+  }}
 </style>
+<script>
+  (function() {{
+    const saved = localStorage.getItem("theme") || "system";
+    const resolved = saved === "system"
+      ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+      : saved;
+    document.documentElement.setAttribute("data-theme", resolved);
+  }})();
+</script>
 </head>
 <body class="h-full text-gray-100">
 <nav class="border-b border-gray-800 bg-gray-900/50">
-  <div class="max-w-7xl mx-auto px-4 py-3 flex items-center">
-    <a href="/" class="font-bold text-lg">🔍 GitHub Portfolio Intelligence</a>
+  <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+    <a href="/" class="font-bold text-lg">GitHub Roast</a>
+    <div class="flex items-center gap-2 text-xs">
+      <span class="text-gray-400">Theme</span>
+      <select id="theme-select" class="bg-gray-800 border border-gray-600 rounded px-2 py-1">
+        <option value="system">System</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </div>
   </div>
 </nav>
 <main class="max-w-7xl mx-auto px-4 py-8">
 {body}
 </main>
+<script>
+  (function() {{
+    const sel = document.getElementById("theme-select");
+    if (!sel) return;
+    sel.value = localStorage.getItem("theme") || "system";
+    sel.addEventListener("change", function() {{
+      const val = sel.value;
+      localStorage.setItem("theme", val);
+      const resolved = val === "system"
+        ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+        : val;
+      document.documentElement.setAttribute("data-theme", resolved);
+    }});
+  }})();
+</script>
 </body>
 </html>"""
 
@@ -118,44 +176,62 @@ def page(title: str, body: str) -> HTMLResponse:
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
+    recent = await db.list_recent_jobs(limit=12)
+    recent_items = []
+    for job in recent:
+        job_id = job["id"]
+        kind = "Single" if job["type"] == "single" else "Cohort"
+        if job["type"] == "single":
+            target = job["input"].get("username", "unknown")
+        else:
+            target = f"{job['input'].get('repo', '')} [{job['input'].get('label', '')}]"
+        recent_items.append(
+            f"<a href='/job/{job_id}' class='block px-3 py-2 rounded border border-gray-700 hover:bg-gray-800/40'>"
+            f"<div class='text-sm font-semibold'>{target}</div>"
+            f"<div class='text-xs text-gray-400'>{kind} · {job['status']} · {job['created_at'][:19]}Z</div>"
+            "</a>"
+        )
+    recent_html = "".join(recent_items) if recent_items else "<p class='text-sm text-gray-500'>No roasts yet.</p>"
+
     body = """
     <div class="text-center mb-10">
-      <h1 class="text-4xl font-extrabold tracking-tight mb-3">GitHub Portfolio Intelligence</h1>
+      <h1 class="text-4xl font-extrabold tracking-tight mb-3">GitHub Roast</h1>
       <p class="text-gray-400 text-lg max-w-2xl mx-auto">
-        LLM-powered analysis of GitHub contributions — evaluate PR quality, authenticity, and discussion depth.
+        Roast GitHub profiles with signal-based scoring: contribution quality, authenticity, and discussion depth.
       </p>
     </div>
 
-    <div class="grid md:grid-cols-2 gap-6">
-      <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6">
-        <div class="text-2xl mb-2">👤</div>
-        <h2 class="text-xl font-bold mb-1">Single Profile</h2>
-        <p class="text-gray-400 text-sm mb-4">Analyze one user's contributions to a repo.</p>
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 mb-6">
+      <div class="flex gap-2 mb-4">
+        <button id="tab-single" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold">Single Roast</button>
+        <button id="tab-bulk" class="px-4 py-2 rounded-lg bg-gray-800 border border-gray-600 text-sm font-semibold">Cohort Rank</button>
+      </div>
+
+      <div id="panel-single">
+        <p class="text-gray-400 text-sm mb-4">Analyze one profile. Repository is optional.</p>
         <form action="/analyze/single" method="post" class="space-y-3">
           <div>
             <label class="block text-xs text-gray-400 mb-1">GitHub Username</label>
-            <input name="username" type="text" placeholder="e.g. octocat" required
+            <input name="username" type="text" value="torvalds" required
               class="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
           </div>
           <div>
-            <label class="block text-xs text-gray-400 mb-1">Repository</label>
-            <input name="repo" type="text" value="netflix/metaflow" placeholder="owner/repo"
+            <label class="block text-xs text-gray-400 mb-1">Repository (Optional)</label>
+            <input name="repo" type="text" value="" placeholder="owner/repo"
               class="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
           </div>
           <button class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-lg text-sm transition">
-            🔍 Analyze
+            Roast Profile
           </button>
         </form>
       </div>
 
-      <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6">
-        <div class="text-2xl mb-2">🏆</div>
-        <h2 class="text-xl font-bold mb-1">Rank a Cohort</h2>
-        <p class="text-gray-400 text-sm mb-4">Fetch all PRs with a label and rank contributors.</p>
+      <div id="panel-bulk" class="hidden">
+        <p class="text-gray-400 text-sm mb-4">Rank contributors from a labeled PR cohort.</p>
         <form action="/analyze/bulk" method="post" class="space-y-3">
           <div>
             <label class="block text-xs text-gray-400 mb-1">Repository</label>
-            <input name="repo" type="text" value="netflix/metaflow" placeholder="owner/repo"
+            <input name="repo" type="text" placeholder="owner/repo" required
               class="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
           </div>
           <div>
@@ -164,20 +240,53 @@ async def index():
               class="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
           </div>
           <button class="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 rounded-lg text-sm transition">
-            🏆 Fetch &amp; Rank
+            Rank Cohort
           </button>
         </form>
       </div>
     </div>
+
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-bold">Recent Roasts</h2>
+        <a href="/api/jobs/recent" class="text-xs text-blue-400 hover:underline">JSON</a>
+      </div>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+        __RECENT_JOBS__
+      </div>
+    </div>
+
+    <script>
+      (function() {
+        const singleBtn = document.getElementById('tab-single');
+        const bulkBtn = document.getElementById('tab-bulk');
+        const singlePanel = document.getElementById('panel-single');
+        const bulkPanel = document.getElementById('panel-bulk');
+
+        function setTab(kind) {
+          const single = kind === 'single';
+          singlePanel.classList.toggle('hidden', !single);
+          bulkPanel.classList.toggle('hidden', single);
+          singleBtn.className = single
+            ? 'px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold'
+            : 'px-4 py-2 rounded-lg bg-gray-800 border border-gray-600 text-sm font-semibold';
+          bulkBtn.className = single
+            ? 'px-4 py-2 rounded-lg bg-gray-800 border border-gray-600 text-sm font-semibold'
+            : 'px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold';
+        }
+        singleBtn.addEventListener('click', function(){ setTab('single'); });
+        bulkBtn.addEventListener('click', function(){ setTab('bulk'); });
+      })();
+    </script>
     """
-    return page("Home", body)
+    return page("Home", body.replace("__RECENT_JOBS__", recent_html))
 
 
 @app.post("/analyze/single")
 async def analyze_single(
     background_tasks: BackgroundTasks,
     username: str = Form(...),
-    repo: str = Form("netflix/metaflow"),
+    repo: str = Form(""),
 ):
     input_data = {"username": username.strip(), "repo": repo.strip()}
     job_id = await db.create_job("single", input_data)
@@ -188,7 +297,7 @@ async def analyze_single(
 @app.post("/analyze/bulk")
 async def analyze_bulk_route(
     background_tasks: BackgroundTasks,
-    repo: str = Form("netflix/metaflow"),
+    repo: str = Form(""),
     label: str = Form("gsoc"),
 ):
     input_data = {"repo": repo.strip(), "label": label.strip()}
@@ -209,17 +318,30 @@ async def job_page(job_id: str):
 
     if job_type == "single":
         title_str = f"Analysis: {inp.get('username', '')}"
+        share_path = f"/{inp.get('username', '').strip()}"
+        if inp.get("repo", "").strip():
+            share_path += f"?repo={quote_plus(inp.get('repo', '').strip())}"
+        share_cta = f"""
+        <a href="{share_path}" class="text-xs bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded transition">Share profile roast</a>
+        """
     else:
         title_str = f"Bulk Rank: {inp.get('repo', '')} [{inp.get('label', '')}]"
+        share_cta = ""
 
     icon = {"queued": "⏳", "running": "🔄", "done": "✅", "error": "❌"}.get(status, "?")
 
     body = f"""
-    <div class="mb-6 flex items-center gap-3">
+    <div class="mb-6 flex items-center justify-between gap-3 flex-wrap">
+      <div class="flex items-center gap-3">
       <span class="text-2xl">{icon}</span>
       <div>
         <h1 class="text-2xl font-bold">{title_str}</h1>
         <p class="text-gray-400 text-sm">Status: {status}</p>
+      </div>
+      </div>
+      <div class="flex items-center gap-2">
+        {share_cta}
+        <a href="/" class="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded transition">Back home</a>
       </div>
     </div>
 
@@ -529,3 +651,32 @@ async def api_results(job_id: str):
         "result": job["result"],
         "created_at": job["created_at"],
     })
+
+
+@app.get("/api/jobs/recent")
+async def api_recent_jobs(limit: int = 20):
+    jobs = await db.list_recent_jobs(limit=max(1, min(limit, 100)))
+    return JSONResponse({"jobs": jobs})
+
+
+@app.get("/{username}", include_in_schema=False)
+async def share_profile(
+    username: str,
+    background_tasks: BackgroundTasks,
+    repo: str = "",
+):
+    reserved = {"analyze", "job", "stream", "api", "docs", "openapi.json", "redoc"}
+    if username in reserved:
+        raise HTTPException(status_code=404)
+    if not re.fullmatch(r"[A-Za-z0-9-]{1,39}", username):
+        raise HTTPException(status_code=404)
+
+    clean_repo = repo.strip()
+    existing = await db.find_latest_single_job(username=username, repo=clean_repo)
+    if existing and existing["status"] in {"queued", "running", "done"}:
+        return RedirectResponse(f"/job/{existing['id']}", status_code=307)
+
+    input_data = {"username": username.strip(), "repo": clean_repo}
+    job_id = await db.create_job("single", input_data)
+    background_tasks.add_task(run_job, job_id, "single", input_data)
+    return RedirectResponse(f"/job/{job_id}", status_code=307)

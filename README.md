@@ -94,6 +94,45 @@ gh auth login   # if not already authenticated
 github-roast youruser
 ```
 
+## Deploy to Hetzner (`hetzner-recon`)
+
+This repo includes a production deploy workflow: `.github/workflows/deploy-hetzner.yml`.
+
+It deploys on every push to `master` and:
+
+1. SSHes into `hetzner-recon`
+2. Rsyncs the repo to `/root/github-roast`
+3. Runs `scripts/deploy_remote.sh` to:
+   - create/update Python venv and install runtime deps
+   - update `.env.production` with CLIProxyAPI runtime (`ANTHROPIC_BASE_URL`)
+   - restart a `github-roast` systemd service on `0.0.0.0:8011`
+   - patch `/root/recon/Caddyfile` and reload `recon-caddy-1`
+
+### GitHub Actions secrets
+
+Set these repository secrets:
+
+- `HETZNER_HOST` — SSH host (IP or DNS name)
+- `HETZNER_USER` — SSH user
+- `SSH_PRIVATE_KEY` — private key used by Actions
+- `CLIPROXY_API_KEY` — CLIProxyAPI key for runtime LLM calls
+- `CLIPROXY_BASE_URL` (optional) — defaults to `http://127.0.0.1:8317`
+- `DEPLOY_GH_TOKEN` (optional) — token for `gh` CLI runtime auth on server
+
+### One-time DNS setup
+
+Create an `A` record:
+
+- `gh-roast.deeprecon.app` -> `<hetzner-recon public IPv4>`
+
+### Host prerequisites
+
+On the server, ensure:
+
+- `uv` is installed
+- `caddy` is installed and running (for TLS + reverse proxy)
+- deploy user has sudo (passwordless for systemd/Caddy reload)
+
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE)
