@@ -32,7 +32,16 @@ from db import Database
 DB_PATH = Path("gh_profiler.db")
 
 
-def _make_progress(quiet: bool) -> Progress:
+def _spinner(quiet: bool) -> Progress:
+    return Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=Console(stderr=True),
+        disable=quiet,
+    )
+
+
+def _bulk_progress(quiet: bool) -> Progress:
     return Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -46,7 +55,7 @@ def _make_progress(quiet: bool) -> Progress:
 async def run_bulk(repo: str, label: str, db: Database, quiet: bool) -> list:
     q: asyncio.Queue = asyncio.Queue()
 
-    with _make_progress(quiet) as progress:
+    with _bulk_progress(quiet) as progress:
         overall = progress.add_task(f"Fetching cohort from {repo}...", total=None)
 
         async def printer():
@@ -74,7 +83,7 @@ async def run_bulk(repo: str, label: str, db: Database, quiet: bool) -> list:
 async def run_single(username: str, repo: str | None, db: Database, quiet: bool) -> dict:
     q: asyncio.Queue = asyncio.Queue()
 
-    with _make_progress(quiet) as progress:
+    with _spinner(quiet) as progress:
         task = progress.add_task(f"Analyzing {username}...", total=None)
 
         async def printer():
