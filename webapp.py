@@ -735,9 +735,9 @@ async def share_profile(
     clean_repo = repo.strip()
     existing = await db.find_latest_single_job(username=username, repo=clean_repo)
     if existing and existing["status"] in {"queued", "running", "done"}:
-        return RedirectResponse(f"/job/{existing['id']}", status_code=307)
+        return await job_page(existing["id"])
 
     input_data = {"username": username.strip(), "repo": clean_repo}
     job_id = await db.create_job("single", input_data)
     background_tasks.add_task(run_job, job_id, "single", input_data)
-    return RedirectResponse(f"/job/{job_id}", status_code=307)
+    return await job_page(job_id)
