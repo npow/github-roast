@@ -690,6 +690,8 @@ async def job_page(job_id: str):
         }};
       }}
 
+      renderPhase();
+
       if (currentStatus==='done'||currentStatus==='error') {{
         fetch('/api/results/'+jobId).then(r=>r.json()).then(data=>{{
           stopPulse();
