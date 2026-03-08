@@ -18,9 +18,13 @@ Usage:
 import argparse
 import asyncio
 import json
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
+
+from rich.console import Console
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TextColumn
 
 from analyzer import analyze_bulk, analyze_single_user
 from db import Database
@@ -28,37 +32,64 @@ from db import Database
 DB_PATH = Path("gh_profiler.db")
 
 
-async def run_bulk(repo: str, label: str, db: Database, verbose: bool) -> list:
+def _make_progress(quiet: bool) -> Progress:
+    return Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}", no_wrap=False),
+        BarColumn(bar_width=24),
+        MofNCompleteColumn(),
+        console=Console(stderr=True),
+        disable=quiet,
+    )
+
+
+async def run_bulk(repo: str, label: str, db: Database, quiet: bool) -> list:
     q: asyncio.Queue = asyncio.Queue()
 
-    async def printer():
-        while True:
-            event = await q.get()
-            if event.get("type") == "progress" and verbose:
-                print(event["message"], flush=True)
-            elif event.get("type") == "result":
-                break
+    with _make_progress(quiet) as progress:
+        overall = progress.add_task(f"Fetching cohort from {repo}...", total=None)
 
-    task = asyncio.create_task(printer())
-    results = await analyze_bulk(repo=repo, label=label, db=db, progress_queue=q)
-    await task
+        async def printer():
+            while True:
+                event = await q.get()
+                if event["type"] == "progress":
+                    msg = event["message"]
+                    progress.update(overall, description=msg)
+                    m = re.search(r"Found (\d+) contributors", msg)
+                    if m:
+                        progress.update(overall, total=int(m.group(1)), completed=0)
+                elif event["type"] == "partial_result":
+                    progress.advance(overall)
+                elif event["type"] == "result":
+                    progress.update(overall, description="Done!")
+                    break
+
+        t = asyncio.create_task(printer())
+        results = await analyze_bulk(repo=repo, label=label, db=db, progress_queue=q)
+        await t
+
     return results
 
 
-async def run_single(username: str, repo: str, db: Database, verbose: bool) -> dict:
+async def run_single(username: str, repo: str | None, db: Database, quiet: bool) -> dict:
     q: asyncio.Queue = asyncio.Queue()
 
-    async def printer():
-        while True:
-            event = await q.get()
-            if event.get("type") == "progress" and verbose:
-                print(event["message"], flush=True)
-            elif event.get("type") == "result":
-                break
+    with _make_progress(quiet) as progress:
+        task = progress.add_task(f"Analyzing {username}...", total=None)
 
-    task = asyncio.create_task(printer())
-    result = await analyze_single_user(username=username, repo=repo, db=db, progress_queue=q)
-    await task
+        async def printer():
+            while True:
+                event = await q.get()
+                if event["type"] == "progress":
+                    progress.update(task, description=event["message"])
+                elif event["type"] == "result":
+                    progress.update(task, description=f"Done!")
+                    break
+
+        t = asyncio.create_task(printer())
+        result = await analyze_single_user(username=username, repo=repo, db=db, progress_queue=q)
+        await t
+
     return result
 
 
@@ -224,12 +255,10 @@ def main():
     db = Database(DB_PATH)
     db.init()
 
-    verbose = not args.quiet
-
     if username:
-        results = [asyncio.run(run_single(username, args.repo, db, verbose))]
+        results = [asyncio.run(run_single(username, args.repo, db, args.quiet))]
     else:
-        results = asyncio.run(run_bulk(args.repo, args.label, db, verbose))
+        results = asyncio.run(run_bulk(args.repo, args.label, db, args.quiet))
 
     if args.format == "json":
         output = json.dumps(results, indent=2, default=str)

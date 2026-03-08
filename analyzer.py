@@ -269,13 +269,13 @@ async def get_user_events(username: str, db) -> list:
     if cached is not None:
         return cached
 
-    # Events API doesn't support --paginate the same way, fetch up to 3 pages manually
+    # Events API doesn't support --paginate cleanly; fetch 3 pages in parallel
+    pages = await asyncio.gather(*[
+        _gh_run(["gh", "api", f"users/{username}/events/public?per_page=100&page={p}"])
+        for p in range(1, 4)
+    ])
     events = []
-    for page in range(1, 4):
-        raw = await _gh_run([
-            "gh", "api",
-            f"users/{username}/events/public?per_page=100&page={page}"
-        ])
+    for raw in pages:
         if not raw:
             break
         page_events = json.loads(raw)
