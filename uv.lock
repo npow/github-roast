@@ -3,6 +3,19 @@ revision = 3
 requires-python = ">=3.11"
 
 [[package]]
+name = "agentrelay-cli"
+version = "0.5.5"
+source = { registry = "https://pypi.netflix.net/simple" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "uvicorn" },
+]
+sdist = { url = "https://pypi.netflix.net/packages/20079341346/agentrelay_cli-0.5.5.tar.gz", hash = "sha256:d07bf09547e0a31ad0efa6d91f5103989e636431bd6a6b475d0368a88e4079c7", size = 25861, upload-time = "2026-03-04T16:02:50.419Z" }
+wheels = [
+    { url = "https://pypi.netflix.net/packages/20079341345/agentrelay_cli-0.5.5-py3-none-any.whl", hash = "sha256:57b32775e069886a22da3320723795e19c62a8312f22363ba292ea91c1ecd975", size = 19327, upload-time = "2026-03-04T16:02:49.152Z" },
+]
+
+[[package]]
 name = "annotated-doc"
 version = "0.0.4"
 source = { registry = "https://pypi.netflix.net/simple" }
@@ -117,10 +130,11 @@ wheels = [
 ]
 
 [[package]]
-name = "gh-roast"
+name = "github-roast"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "agentrelay-cli" },
     { name = "anthropic" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -130,6 +144,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "agentrelay-cli", specifier = ">=0.5.5" },
     { name = "anthropic", specifier = ">=0.40" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },

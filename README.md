@@ -1,4 +1,4 @@
-# gh-roast
+# github-roast
 
 [![CI](https://github.com/npow/github-roast/actions/workflows/ci.yml/badge.svg)](https://github.com/npow/github-roast/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -28,7 +28,7 @@ python analyze.py --repo netflix/metaflow --user someuser
 ```bash
 # Clone and install deps with uv
 git clone https://github.com/npow/github-roast
-cd gh-roast
+cd github-roast
 uv sync
 
 # Set your Anthropic relay (or use the API directly)
@@ -62,7 +62,7 @@ uv run uvicorn webapp:app --reload
 
 ## How it works
 
-For each contributor, gh-roast:
+For each contributor, github-roast:
 
 1. Fetches the last 90 days of public GitHub events (commits, PRs, reviews, comments)
 2. Pulls their top repos and reads actual README content, file trees, and language stats
@@ -85,7 +85,7 @@ The `gh` CLI handles GitHub auth — no tokens to manage.
 
 ```bash
 git clone https://github.com/npow/github-roast
-cd gh-roast
+cd github-roast
 uv sync
 gh auth login   # if not already authenticated
 python analyze.py --user youruser --repo owner/repo
