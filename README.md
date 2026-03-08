@@ -13,47 +13,50 @@ Evaluating GitHub profiles for GSoC, hiring, or program admissions takes hours p
 ## Quick start
 
 ```bash
-# Requires: gh CLI logged in, ANTHROPIC_BASE_URL set
-uv sync
+# Install
+git clone https://github.com/npow/github-roast && cd github-roast && uv sync
 
-# Analyze a cohort by label
-python analyze.py --repo netflix/metaflow --label gsoc --output report.md
+# Analyze any GitHub user
+github-roast torvalds
 
-# Analyze a single contributor
-python analyze.py --repo netflix/metaflow --user someuser
+# Rank a GSoC cohort
+github-roast --repo netflix/metaflow --label gsoc --output report.md
 ```
 
 ## Install
 
 ```bash
-# Clone and install deps with uv
 git clone https://github.com/npow/github-roast
 cd github-roast
 uv sync
-
-# Set your Anthropic relay (or use the API directly)
-export ANTHROPIC_BASE_URL=http://localhost:18082
 ```
 
-Requires the `gh` CLI authenticated with a GitHub account (`gh auth login`).
+Requires the `gh` CLI authenticated with a GitHub account (`gh auth login`) and [agent-relay](https://github.com/npow/claude-relay) running locally.
 
 ## Usage
 
-**Bulk ranking** — analyze all contributors who opened a PR with a given label:
+**Analyze any GitHub user** — no repo required:
 
 ```bash
-python analyze.py --repo netflix/metaflow --label gsoc --format markdown --output report.md
+github-roast torvalds
+github-roast torvalds --format json
+```
+
+**Deep-dive with target repo** — adds in-depth PR analysis for a specific repo:
+
+```bash
+github-roast npow --repo netflix/metaflow
+```
+
+**Bulk ranking** — rank all contributors who opened a PR with a given label:
+
+```bash
+github-roast --repo netflix/metaflow --label gsoc --output report.md
 ```
 
 Output includes a ranked table with merge rate, PRs/week, burst ratio, and trivial-PR rate — the key farming signals — followed by detailed profiles with actual PR discussion excerpts.
 
-**Single user** — deep-dive a specific contributor:
-
-```bash
-python analyze.py --repo netflix/metaflow --user npow --format json
-```
-
-**Web UI** — run the FastAPI app for a browser-based interface with live progress streaming:
+**Web UI** — browser-based interface with live progress streaming:
 
 ```bash
 uv run uvicorn webapp:app --reload
@@ -88,7 +91,7 @@ git clone https://github.com/npow/github-roast
 cd github-roast
 uv sync
 gh auth login   # if not already authenticated
-python analyze.py --user youruser --repo owner/repo
+github-roast youruser
 ```
 
 ## License

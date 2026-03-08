@@ -201,25 +201,33 @@ def render_markdown(results: list) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="GitHub Activity Profiler")
-    parser.add_argument("--repo", default="netflix/metaflow", help="Target repo (owner/repo)")
-    parser.add_argument("--label", help="Label to filter PRs (for bulk mode)")
-    parser.add_argument("--user", help="Single username to analyze")
+    parser = argparse.ArgumentParser(
+        prog="github-roast",
+        description="Rank and vet GitHub contributors — detects PR farming, analyzes real engagement.",
+    )
+    parser.add_argument("user", nargs="?", help="GitHub username to analyze (positional)")
+    parser.add_argument("--user", dest="user_flag", help="GitHub username to analyze")
+    parser.add_argument("--repo", default=None, help="Target repo (owner/repo) for in-depth PR analysis")
+    parser.add_argument("--label", help="Analyze all contributors with this label in --repo (bulk mode)")
     parser.add_argument("--format", choices=["markdown", "json"], default="markdown")
     parser.add_argument("--output", help="Output file (default: stdout)")
     parser.add_argument("--quiet", action="store_true", help="Suppress progress output")
     args = parser.parse_args()
 
-    if not args.label and not args.user:
-        parser.error("Provide --label (bulk) or --user (single)")
+    username = args.user or args.user_flag
+
+    if not args.label and not username:
+        parser.error("Provide a username (github-roast <user>) or --label with --repo for bulk mode")
+    if args.label and not args.repo:
+        parser.error("--label requires --repo")
 
     db = Database(DB_PATH)
     db.init()
 
     verbose = not args.quiet
 
-    if args.user:
-        results = [asyncio.run(run_single(args.user, args.repo, db, verbose))]
+    if username:
+        results = [asyncio.run(run_single(username, args.repo, db, verbose))]
     else:
         results = asyncio.run(run_bulk(args.repo, args.label, db, verbose))
 

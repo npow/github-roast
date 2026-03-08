@@ -12,6 +12,9 @@ dependencies = [
     "agentrelay-cli>=0.5.5",
 ]
 
+[project.scripts]
+github-roast = "analyze:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

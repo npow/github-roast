@@ -1011,7 +1011,7 @@ async def llm_analyze_full_profile(
 
 async def analyze_single_user(
     username: str,
-    repo: str,
+    repo: str | None,
     db,
     progress_queue: asyncio.Queue,
 ) -> dict:
@@ -1057,34 +1057,35 @@ async def analyze_single_user(
         f"orgs={activity_signals['unique_orgs']}"
     )
 
-    # Detailed analysis of PRs in the target repo
-    await emit(f"Fetching PRs in {repo}...")
-    repo_items = await gh_search_async(f"author:{username}+is:pr+repo:{repo}", db)
-    pr_numbers = [i["number"] for i in repo_items]
-    await emit(f"  {len(pr_numbers)} PR(s) in {repo}")
-
-    await emit("Fetching repo merge time baseline...")
-    repo_median = await get_repo_median_merge_hours(repo, db)
-
-    pr_details = []
-    for num in pr_numbers:
-        await emit(f"Fetching PR #{num} details...")
-        detail = await get_pr_details(num, repo, db)
-        if detail:
-            pr_details.append(detail)
-
+    # Detailed analysis of PRs in the target repo (optional)
     target_pr_analyses = []
-    for detail in pr_details:
-        await emit(f"LLM: analyzing PR #{detail['number']} \"{detail['title'][:50]}\"...")
-        llm_result = await llm_analyze_pr(detail, repo_median, db)
-        target_pr_analyses.append({
-            "number": detail["number"],
-            "title": detail["title"],
-            "url": detail["url"],
-            "classification": llm_result.get("classification", "unknown"),
-            "discussion_score": llm_result.get("discussion_score", 0),
-            "rationale": llm_result.get("classification_rationale", ""),
-        })
+    if repo:
+        await emit(f"Fetching PRs in {repo}...")
+        repo_items = await gh_search_async(f"author:{username}+is:pr+repo:{repo}", db)
+        pr_numbers = [i["number"] for i in repo_items]
+        await emit(f"  {len(pr_numbers)} PR(s) in {repo}")
+
+        await emit("Fetching repo merge time baseline...")
+        repo_median = await get_repo_median_merge_hours(repo, db)
+
+        pr_details = []
+        for num in pr_numbers:
+            await emit(f"Fetching PR #{num} details...")
+            detail = await get_pr_details(num, repo, db)
+            if detail:
+                pr_details.append(detail)
+
+        for detail in pr_details:
+            await emit(f"LLM: analyzing PR #{detail['number']} \"{detail['title'][:50]}\"...")
+            llm_result = await llm_analyze_pr(detail, repo_median, db)
+            target_pr_analyses.append({
+                "number": detail["number"],
+                "title": detail["title"],
+                "url": detail["url"],
+                "classification": llm_result.get("classification", "unknown"),
+                "discussion_score": llm_result.get("discussion_score", 0),
+                "rationale": llm_result.get("classification_rationale", ""),
+            })
 
     await emit(f"LLM: full profile assessment for {username}...")
     overall = await llm_analyze_full_profile(
