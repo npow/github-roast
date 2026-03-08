@@ -1035,18 +1035,14 @@ async def analyze_single_user(
     own_repos = await get_user_repos(username, db)
     await emit(f"  {len(own_repos)} non-fork repos found")
 
-    await emit(f"Deep-diving top repos (README, files, languages, commits)...")
-    deep_repos = await get_top_repos_deep(username, own_repos, db)
-    await emit(f"  Analyzed {len(deep_repos)} repos in depth")
-
-    await emit(f"Fetching all PRs and issues across GitHub...")
-    all_prs, issues_filed = await asyncio.gather(
-        get_user_all_prs(username, db),
-        get_user_issues_filed(username, db),
+    await emit(f"Deep-diving top repos + fetching all PRs/issues in parallel...")
+    (deep_repos, (all_prs, issues_filed)) = await asyncio.gather(
+        get_top_repos_deep(username, own_repos, db),
+        asyncio.gather(get_user_all_prs(username, db), get_user_issues_filed(username, db)),
     )
-    await emit(f"  {len(all_prs)} PRs, {len(issues_filed)} issues found")
+    await emit(f"  {len(deep_repos)} repos deep-dived, {len(all_prs)} PRs, {len(issues_filed)} issues")
 
-    await emit(f"Sampling cross-repo PR content and computing activity signals...")
+    await emit(f"Sampling cross-repo PR discussions...")
     pr_samples = await get_pr_sample_stats(all_prs, db)
     commit_messages = extract_commit_messages(events)
     activity_signals = compute_activity_signals(all_prs, event_summary, pr_samples)
@@ -1068,16 +1064,15 @@ async def analyze_single_user(
         await emit("Fetching repo merge time baseline...")
         repo_median = await get_repo_median_merge_hours(repo, db)
 
-        pr_details = []
-        for num in pr_numbers:
-            await emit(f"Fetching PR #{num} details...")
-            detail = await get_pr_details(num, repo, db)
-            if detail:
-                pr_details.append(detail)
+        await emit(f"Fetching {len(pr_numbers)} PR(s) in parallel...")
+        pr_details = [
+            d for d in await asyncio.gather(*[get_pr_details(n, repo, db) for n in pr_numbers])
+            if d
+        ]
 
-        for detail in pr_details:
-            await emit(f"LLM: analyzing PR #{detail['number']} \"{detail['title'][:50]}\"...")
-            llm_result = await llm_analyze_pr(detail, repo_median, db)
+        await emit(f"LLM: analyzing {len(pr_details)} PR(s) in parallel...")
+        llm_results = await asyncio.gather(*[llm_analyze_pr(d, repo_median, db) for d in pr_details])
+        for detail, llm_result in zip(pr_details, llm_results):
             target_pr_analyses.append({
                 "number": detail["number"],
                 "title": detail["title"],
@@ -1137,81 +1132,83 @@ async def analyze_bulk(
     await emit("Fetching repo merge time baseline...")
     repo_median = await get_repo_median_merge_hours(repo, db)
 
-    all_results = []
-    for username in sorted(by_user.keys()):
-        pr_numbers = by_user[username]
-        await emit(f"[{username}] Starting full profile analysis...")
+    sem = asyncio.Semaphore(4)  # max 4 users analyzed concurrently
 
-        # GitHub-wide activity (parallel fetch)
-        await emit(f"[{username}] Fetching profile + events + repos + all PRs...")
-        profile, events, own_repos, all_prs, issues_filed = await asyncio.gather(
-            get_user_profile(username, db),
-            get_user_events(username, db),
-            get_user_repos(username, db),
-            get_user_all_prs(username, db),
-            get_user_issues_filed(username, db),
-        )
-        event_summary = summarize_events(events)
-        await emit(f"[{username}] {event_summary['total_events']} events, {event_summary['total_commits']} commits, {len(own_repos)} repos, {len(all_prs)} PRs total")
+    async def analyze_user(username: str, pr_numbers: list) -> dict:
+        async with sem:
+            await emit(f"[{username}] Starting full profile analysis...")
 
-        await emit(f"[{username}] Deep-diving top repos (README, files, languages, commits)...")
-        deep_repos = await get_top_repos_deep(username, own_repos, db)
-        await emit(f"[{username}] Analyzed {len(deep_repos)} repos in depth")
+            await emit(f"[{username}] Fetching profile + events + repos + all PRs...")
+            profile, events, own_repos, all_prs, issues_filed = await asyncio.gather(
+                get_user_profile(username, db),
+                get_user_events(username, db),
+                get_user_repos(username, db),
+                get_user_all_prs(username, db),
+                get_user_issues_filed(username, db),
+            )
+            event_summary = summarize_events(events)
+            await emit(f"[{username}] {event_summary['total_events']} events, {event_summary['total_commits']} commits, {len(own_repos)} repos, {len(all_prs)} PRs total")
 
-        await emit(f"[{username}] Sampling cross-repo PR content and computing activity signals...")
-        pr_samples = await get_pr_sample_stats(all_prs, db)
-        commit_messages = extract_commit_messages(events)
-        activity_signals = compute_activity_signals(all_prs, event_summary, pr_samples)
-        await emit(
-            f"[{username}] Signals: merge_rate={activity_signals['merge_rate_pct']}%, "
-            f"prs/wk={activity_signals['prs_per_week']}, "
-            f"trivial={activity_signals['trivial_pr_rate_pct']}%, "
-            f"orgs={activity_signals['unique_orgs']}"
-        )
+            deep_repos, pr_samples = await asyncio.gather(
+                get_top_repos_deep(username, own_repos, db),
+                get_pr_sample_stats(all_prs, db),
+            )
+            commit_messages = extract_commit_messages(events)
+            activity_signals = compute_activity_signals(all_prs, event_summary, pr_samples)
+            await emit(
+                f"[{username}] Signals: merge_rate={activity_signals['merge_rate_pct']}%, "
+                f"prs/wk={activity_signals['prs_per_week']}, "
+                f"trivial={activity_signals['trivial_pr_rate_pct']}%, "
+                f"orgs={activity_signals['unique_orgs']}"
+            )
 
-        # Target repo PR details
-        pr_details = []
-        for num in pr_numbers:
-            await emit(f"[{username}] Fetching PR #{num}...")
-            detail = await get_pr_details(num, repo, db)
-            if detail:
-                pr_details.append(detail)
+            await emit(f"[{username}] Fetching {len(pr_numbers)} target-repo PR(s) in parallel...")
+            pr_details = [
+                d for d in await asyncio.gather(*[get_pr_details(n, repo, db) for n in pr_numbers])
+                if d
+            ]
 
-        target_pr_analyses = []
-        for detail in pr_details:
-            await emit(f"[{username}] LLM: PR #{detail['number']}...")
-            llm_result = await llm_analyze_pr(detail, repo_median, db)
-            target_pr_analyses.append({
-                "number": detail["number"],
-                "title": detail["title"],
-                "url": detail["url"],
-                "classification": llm_result.get("classification", "unknown"),
-                "discussion_score": llm_result.get("discussion_score", 0),
-                "rationale": llm_result.get("classification_rationale", ""),
-            })
+            target_pr_analyses = []
+            if pr_details:
+                await emit(f"[{username}] LLM: analyzing {len(pr_details)} PR(s) in parallel...")
+                llm_results = await asyncio.gather(*[llm_analyze_pr(d, repo_median, db) for d in pr_details])
+                for detail, llm_result in zip(pr_details, llm_results):
+                    target_pr_analyses.append({
+                        "number": detail["number"],
+                        "title": detail["title"],
+                        "url": detail["url"],
+                        "classification": llm_result.get("classification", "unknown"),
+                        "discussion_score": llm_result.get("discussion_score", 0),
+                        "rationale": llm_result.get("classification_rationale", ""),
+                    })
 
-        await emit(f"[{username}] LLM: full profile assessment...")
-        overall = await llm_analyze_full_profile(
-            username, profile, own_repos, deep_repos, all_prs, issues_filed, event_summary, target_pr_analyses, db,
-            activity_signals=activity_signals, pr_samples=pr_samples, commit_messages=commit_messages,
-        )
+            await emit(f"[{username}] LLM: full profile assessment...")
+            overall = await llm_analyze_full_profile(
+                username, profile, own_repos, deep_repos, all_prs, issues_filed, event_summary, target_pr_analyses, db,
+                activity_signals=activity_signals, pr_samples=pr_samples, commit_messages=commit_messages,
+            )
 
-        user_result = {
-            "username": username,
-            "profile": profile,
-            "event_summary": event_summary,
-            "activity_signals": activity_signals,
-            "own_repos": own_repos,
-            "deep_repos": deep_repos,
-            "all_prs": all_prs,
-            "issues_filed": issues_filed,
-            "target_repo_pr_analyses": target_pr_analyses,
-            "pr_analyses": target_pr_analyses,
-            "overall": overall,
-        }
-        all_results.append(user_result)
-        await progress_queue.put({"type": "partial_result", "data": user_result})
-        await emit(f"[{username}] Done!")
+            user_result = {
+                "username": username,
+                "profile": profile,
+                "event_summary": event_summary,
+                "activity_signals": activity_signals,
+                "own_repos": own_repos,
+                "deep_repos": deep_repos,
+                "all_prs": all_prs,
+                "issues_filed": issues_filed,
+                "target_repo_pr_analyses": target_pr_analyses,
+                "pr_analyses": target_pr_analyses,
+                "overall": overall,
+            }
+            await progress_queue.put({"type": "partial_result", "data": user_result})
+            await emit(f"[{username}] Done!")
+            return user_result
+
+    all_results = list(await asyncio.gather(*[
+        analyze_user(username, pr_numbers)
+        for username, pr_numbers in by_user.items()
+    ]))
 
     await progress_queue.put({"type": "result", "data": all_results})
     await emit("All done!")
