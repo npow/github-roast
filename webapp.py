@@ -516,8 +516,8 @@ async def job_page(job_id: str):
         const prs = data.pr_analyses||[];
         const allPrs = data.all_prs||[];
         const repos = data.own_repos||[];
-        const flags = (o.red_flags||[]).map(f=>`<span class="badge bg-red-900 text-red-200">${{linkifyRefText(f)}}</span>`).join(' ');
-        const strengths = (o.strengths||[]).map(s=>`<span class="badge bg-green-900 text-green-200">${{linkifyRefText(s)}}</span>`).join(' ');
+        const flags = (o.red_flags||[]).map(f=>`<li class="text-sm text-gray-300 bg-gray-800 rounded px-3 py-2">${{linkifyRefText(f)}}</li>`).join('');
+        const strengths = (o.strengths||[]).map(s=>`<li class="text-sm text-gray-300 bg-gray-800 rounded px-3 py-2">${{linkifyRefText(s)}}</li>`).join('');
         const prRows = prs.map(p=>`<tr class="border-b border-gray-800 hover:bg-gray-800/40">
           <td class="py-2 px-3"><a href="${{p.url}}" target="_blank" class="text-blue-400 hover:underline text-sm">${{(p.title||'').slice(0,70)}}</a></td>
           <td class="py-2 px-3">${{clfBadge(p.classification)}}</td>
@@ -557,8 +557,8 @@ async def job_page(job_id: str):
               ${{bar('Discussion Depth',o.discussion_depth||0)}}
               ${{bar('Repo Quality',o.repo_quality||0)}}
             </div>
-            ${{flags?'<h3 class="text-sm font-semibold mt-4 text-red-400">Red Flags</h3><div class="flex flex-wrap gap-2 mt-1">'+flags+'</div>':''}}
-            ${{strengths?'<h3 class="text-sm font-semibold mt-3 text-green-400">Strengths</h3><div class="flex flex-wrap gap-2 mt-1">'+strengths+'</div>':''}}
+            ${{flags?'<h3 class="text-sm font-semibold mt-4">Red Flags</h3><ul class="mt-2 space-y-2">'+flags+'</ul>':''}}
+            ${{strengths?'<h3 class="text-sm font-semibold mt-3">Strengths</h3><ul class="mt-2 space-y-2">'+strengths+'</ul>':''}}
           </div>
           ${{prs.length?`<div class="bg-gray-900 border border-gray-700 rounded-xl overflow-hidden mb-6">
             <div class="px-4 py-3 border-b border-gray-700 font-semibold">PRs Analyzed</div>
@@ -671,8 +671,8 @@ async def job_page(job_id: str):
           // render inline in panel instead
           const o=data.overall||{{}};
           const prs=data.pr_analyses||[];
-          const flags=(o.red_flags||[]).map(f=>`<span class="badge bg-red-900 text-red-200">${{linkifyRefText(f)}}</span>`).join(' ');
-          const strengths=(o.strengths||[]).map(s=>`<span class="badge bg-green-900 text-green-200">${{linkifyRefText(s)}}</span>`).join(' ');
+          const flags=(o.red_flags||[]).map(f=>`<li class="text-sm text-gray-300 bg-gray-800 rounded px-3 py-2">${{linkifyRefText(f)}}</li>`).join('');
+          const strengths=(o.strengths||[]).map(s=>`<li class="text-sm text-gray-300 bg-gray-800 rounded px-3 py-2">${{linkifyRefText(s)}}</li>`).join('');
           const prRows=prs.map(p=>`<tr class="border-b border-gray-800">
             <td class="py-1.5 px-2"><a href="${{p.url}}" target="_blank" class="text-blue-400 hover:underline text-xs">${{p.title.slice(0,60)}}</a></td>
             <td class="py-1.5 px-2">${{clfBadge(p.classification)}}</td>
@@ -686,8 +686,8 @@ async def job_page(job_id: str):
             ${{bar('Discussion Depth',o.discussion_depth||0)}}
             ${{bar('Repo Quality',o.repo_quality||0)}}
             <p class="text-sm text-gray-300 mt-3 mb-3">${{o.executive_summary||''}}</p>
-            ${{flags?'<div class="mb-2">'+flags+'</div>':''}}
-            ${{strengths?'<div class="mb-3">'+strengths+'</div>':''}}
+            ${{flags?'<h3 class="text-sm font-semibold mt-4 mb-2">Red Flags</h3><ul class="space-y-2 mb-3">'+flags+'</ul>':''}}
+            ${{strengths?'<h3 class="text-sm font-semibold mt-3 mb-2">Strengths</h3><ul class="space-y-2 mb-3">'+strengths+'</ul>':''}}
             ${{prs.length?`<table class="w-full text-sm mt-2"><thead><tr class="text-left text-xs text-gray-400 border-b border-gray-700">
               <th class="py-1.5 px-2">PR</th><th class="py-1.5 px-2">Type</th><th class="py-1.5 px-2">Score</th>
             </tr></thead><tbody>${{prRows}}</tbody></table>`:''}}
