@@ -485,16 +485,24 @@ async def job_page(job_id: str):
         const flags = (o.red_flags||[]).map(f=>`<span class="badge bg-red-900 text-red-200">${{f}}</span>`).join(' ');
         const strengths = (o.strengths||[]).map(s=>`<span class="badge bg-green-900 text-green-200">${{s}}</span>`).join(' ');
         const prRows = prs.map(p=>`<tr class="border-b border-gray-800 hover:bg-gray-800/40">
-          <td class="py-2 px-3"><a href="${{p.url}}" target="_blank" class="text-blue-400 hover:underline text-sm">${{p.title.slice(0,70)}}</a></td>
+          <td class="py-2 px-3"><a href="${{p.url}}" target="_blank" class="text-blue-400 hover:underline text-sm">${{(p.title||'').slice(0,70)}}</a></td>
           <td class="py-2 px-3">${{clfBadge(p.classification)}}</td>
           <td class="py-2 px-3 text-center font-mono text-sm">${{p.discussion_score.toFixed(1)}}</td>
-          <td class="py-2 px-3 text-xs text-gray-400">${{p.rationale.slice(0,120)}}</td>
+          <td class="py-2 px-3 text-xs text-gray-400">${{(p.rationale||'').slice(0,120)}}</td>
         </tr>`).join('');
-        const repoCards = repos.map(r=>`<div class="bg-gray-800 rounded-lg p-3">
-          <div class="font-mono text-sm font-bold text-blue-300">${{r.name}}</div>
-          <div class="text-xs text-gray-400 mt-1">${{r.language||'?'}} · ⭐${{r.stars}}</div>
-          <div class="text-xs text-gray-500 mt-1 truncate">${{r.description||''}}</div>
-        </div>`).join('');
+        function sortRepos(items, mode) {{
+          const arr = [...items];
+          if (mode === 'pushed') return arr.sort((a,b)=>Date.parse(b.pushed_at||0)-Date.parse(a.pushed_at||0));
+          if (mode === 'name') return arr.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+          return arr.sort((a,b)=>(b.stars||0)-(a.stars||0));
+        }}
+        function repoCardsHtml(items) {{
+          return items.map(r=>`<div class="bg-gray-800 rounded-lg p-3">
+            <div class="font-mono text-sm font-bold text-blue-300">${{r.name}}</div>
+            <div class="text-xs text-gray-400 mt-1">${{r.language||'?'}} · ⭐${{r.stars||0}}</div>
+            <div class="text-xs text-gray-500 mt-1 truncate">${{r.description||''}}</div>
+          </div>`).join('');
+        }}
 
         fullResults.innerHTML = `
           <div class="bg-gray-900 border border-gray-700 rounded-xl p-6 mb-6">
@@ -515,9 +523,25 @@ async def job_page(job_id: str):
               <th class="py-2 px-3">Title</th><th class="py-2 px-3">Type</th><th class="py-2 px-3 text-center">Discussion</th><th class="py-2 px-3">Rationale</th>
             </tr></thead><tbody>${{prRows}}</tbody></table></div>`:''}}
           ${{repos.length?`<div class="bg-gray-900 border border-gray-700 rounded-xl p-4">
-            <h3 class="font-semibold mb-3">Own Repos</h3>
-            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${{repoCards}}</div></div>`:''}}
+            <div class="flex items-center justify-between gap-3 mb-3">
+              <h3 class="font-semibold">Own Repos</h3>
+              <label class="text-xs text-gray-400">Sort
+                <select id="repo-sort" class="ml-1 bg-gray-800 border border-gray-600 rounded px-2 py-1">
+                  <option value="stars">Stars</option>
+                  <option value="pushed">Recently Pushed</option>
+                  <option value="name">Name</option>
+                </select>
+              </label>
+            </div>
+            <div id="repo-grid" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${{repoCardsHtml(sortRepos(repos,'stars'))}}</div></div>`:''}}
         `;
+        const repoSort = document.getElementById('repo-sort');
+        const repoGrid = document.getElementById('repo-grid');
+        if (repoSort && repoGrid) {{
+          repoSort.addEventListener('change', function() {{
+            repoGrid.innerHTML = repoCardsHtml(sortRepos(repos, repoSort.value));
+          }});
+        }}
       }}
 
       function renderBulkPartial(data) {{

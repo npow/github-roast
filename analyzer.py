@@ -830,6 +830,12 @@ def _llm_analyze_full_profile_sync(
     """
     Holistic LLM assessment using the full GitHub activity picture.
     """
+    def _clip(value: Any, n: int) -> str:
+        return str(value or "")[:n]
+
+    def _date10(value: Any) -> str:
+        return _clip(value or "?", 10)
+
     sig = activity_signals
 
     # ── Farming signals warnings ─────────────────────────────────────────────
@@ -864,7 +870,7 @@ def _llm_analyze_full_profile_sync(
         review_states = ", ".join(s.get("review_states", [])) or "no reviews"
         merged_str = "MERGED" if s.get("merged") else s.get("state", "?").upper()
         sample_sections.append(
-            f"  [{s['repo']}] #{s['number']} \"{s['title'][:80]}\"\n"
+            f"  [{s['repo']}] #{s['number']} \"{_clip(s.get('title'), 80)}\"\n"
             f"  Status: {merged_str} | +{s.get('additions',0)}/-{s.get('deletions',0)} lines, {s.get('changed_files',0)} files | reviews: {review_states}\n"
             f"  Discussion:\n    {(s.get('thread') or '(no discussion)').replace(chr(10), chr(10)+'    ')}"
         )
@@ -875,7 +881,7 @@ def _llm_analyze_full_profile_sync(
 
     # ── Own repos ────────────────────────────────────────────────────────────
     repo_lines = "\n".join(
-        f"- {r['name']} ({r['language'] or '?'}): ⭐{r['stars']} forks:{r['forks']} | {r['description'][:80] or 'no description'}"
+        f"- {r['name']} ({r['language'] or '?'}): ⭐{r['stars']} forks:{r['forks']} | {_clip(r.get('description') or 'no description', 80)}"
         + (f" | topics: {','.join(r['topics'][:5])}" if r.get('topics') else "")
         for r in own_repos[:15]
     ) or "(none)"
@@ -972,7 +978,7 @@ ACCOUNT & IDENTITY
 ══════════════════════════════════════════════════════════════════════
 RECENT ACTIVITY (last ~90 days of public events)
 ══════════════════════════════════════════════════════════════════════
-- Total events: {ev.get('total_events', 0)} (date range: {(ev.get('date_range') or {}).get('oldest', '?')[:10]} to {(ev.get('date_range') or {}).get('newest', '?')[:10]})
+- Total events: {ev.get('total_events', 0)} (date range: {_date10((ev.get('date_range') or {}).get('oldest'))} to {_date10((ev.get('date_range') or {}).get('newest'))})
 - Commits: {ev.get('total_commits', 0)} across {ev.get('repos_with_commits', 0)} repos
 - PRs opened: {ev.get('prs_opened', 0)} | PRs with merged activity: {ev.get('prs_merged', 0)}
 - Issues opened: {ev.get('issues_opened', 0)} | Review/comment events: {ev.get('comments_and_reviews', 0)}
