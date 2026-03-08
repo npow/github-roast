@@ -464,6 +464,17 @@ async def job_page(job_id: str):
         return `<span class="badge ${{cls}}">${{rec}}</span>`;
       }}
 
+      function escHtml(s) {{
+        return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+      }}
+
+      function linkifyRefText(text) {{
+        let out = escHtml(text);
+        out = out.replace(/\\b([A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+)\\s+#(\\d+)\\b/g, '<a href="https://github.com/$1/pull/$2" target="_blank" class="hover:underline text-blue-300">$1 #$2</a>');
+        out = out.replace(/\\b([A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+)\\b/g, '<a href="https://github.com/$1" target="_blank" class="hover:underline text-blue-300">$1</a>');
+        return out;
+      }}
+
       function clfBadge(clf) {{
         const m = {{'substantive-code':'bg-blue-600 text-white','trivial-code':'bg-blue-900 text-blue-200','docs-only':'bg-gray-600 text-gray-200','test-only':'bg-purple-700 text-white','config-only':'bg-gray-700 text-gray-300','manufactured':'bg-red-700 text-red-100','unknown':'bg-gray-800 text-gray-400'}};
         return `<span class="badge ${{m[clf]||'bg-gray-800 text-gray-400'}}">${{clf}}</span>`;
@@ -505,8 +516,8 @@ async def job_page(job_id: str):
         const prs = data.pr_analyses||[];
         const allPrs = data.all_prs||[];
         const repos = data.own_repos||[];
-        const flags = (o.red_flags||[]).map(f=>`<span class="badge bg-red-900 text-red-200">${{f}}</span>`).join(' ');
-        const strengths = (o.strengths||[]).map(s=>`<span class="badge bg-green-900 text-green-200">${{s}}</span>`).join(' ');
+        const flags = (o.red_flags||[]).map(f=>`<span class="badge bg-red-900 text-red-200">${{linkifyRefText(f)}}</span>`).join(' ');
+        const strengths = (o.strengths||[]).map(s=>`<span class="badge bg-green-900 text-green-200">${{linkifyRefText(s)}}</span>`).join(' ');
         const prRows = prs.map(p=>`<tr class="border-b border-gray-800 hover:bg-gray-800/40">
           <td class="py-2 px-3"><a href="${{p.url}}" target="_blank" class="text-blue-400 hover:underline text-sm">${{(p.title||'').slice(0,70)}}</a></td>
           <td class="py-2 px-3">${{clfBadge(p.classification)}}</td>
@@ -660,8 +671,8 @@ async def job_page(job_id: str):
           // render inline in panel instead
           const o=data.overall||{{}};
           const prs=data.pr_analyses||[];
-          const flags=(o.red_flags||[]).map(f=>`<span class="badge bg-red-900 text-red-200">${{f}}</span>`).join(' ');
-          const strengths=(o.strengths||[]).map(s=>`<span class="badge bg-green-900 text-green-200">${{s}}</span>`).join(' ');
+          const flags=(o.red_flags||[]).map(f=>`<span class="badge bg-red-900 text-red-200">${{linkifyRefText(f)}}</span>`).join(' ');
+          const strengths=(o.strengths||[]).map(s=>`<span class="badge bg-green-900 text-green-200">${{linkifyRefText(s)}}</span>`).join(' ');
           const prRows=prs.map(p=>`<tr class="border-b border-gray-800">
             <td class="py-1.5 px-2"><a href="${{p.url}}" target="_blank" class="text-blue-400 hover:underline text-xs">${{p.title.slice(0,60)}}</a></td>
             <td class="py-1.5 px-2">${{clfBadge(p.classification)}}</td>
