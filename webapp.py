@@ -132,6 +132,8 @@ PAGE = """<!DOCTYPE html>
   }}
   [data-theme="light"] a {{ color:#1d4ed8; }}
   [data-theme="light"] a:hover {{ color:#1e40af; }}
+  [data-theme="light"] a.text-white,
+  [data-theme="light"] a.text-white:hover {{ color:#ffffff !important; }}
   [data-theme="light"] .log-line {{ color:#166534; }}
 </style>
 <script>
@@ -334,7 +336,7 @@ async def job_page(job_id: str):
         if inp.get("repo", "").strip():
             share_path += f"?repo={quote_plus(inp.get('repo', '').strip())}"
         share_cta = f"""
-        <a href="{share_path}" class="text-xs bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded transition">Share profile roast</a>
+        <a href="{share_path}" class="text-xs text-white bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded transition">Share profile roast</a>
         """
     else:
         title_str = f"Bulk Rank: {inp.get('repo', '')} [{inp.get('label', '')}]"
