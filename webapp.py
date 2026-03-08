@@ -486,6 +486,23 @@ async def job_page(job_id: str):
         return `<span class="badge ${{m[clf]||'bg-gray-800 text-gray-400'}}">${{clf}}</span>`;
       }}
 
+      function prStatus(p) {{
+        if (p && p.merged) return 'merged';
+        const st = String((p && p.state) || '').toLowerCase();
+        if (st === 'closed') return 'closed-not-merged';
+        if (st === 'open') return 'open';
+        if (p && p.pull_request && p.pull_request.merged_at) return 'merged';
+        return st || 'unknown';
+      }}
+
+      function prStatusBadge(p) {{
+        const s = prStatus(p);
+        if (s === 'merged') return '<span class="badge bg-green-700 text-white">merged</span>';
+        if (s === 'closed-not-merged') return '<span class="badge bg-amber-700 text-white">closed (not merged)</span>';
+        if (s === 'open') return '<span class="badge bg-blue-700 text-white">open</span>';
+        return `<span class="badge bg-gray-700 text-gray-200">${{escHtml(s)}}</span>`;
+      }}
+
       function bar(label, val) {{
         const pct = Math.min(100, Math.round((val/10)*100));
         const c = pct>=70?'bg-green-500':pct>=40?'bg-yellow-500':'bg-red-500';
@@ -526,6 +543,7 @@ async def job_page(job_id: str):
         const strengths = (o.strengths||[]).map(s=>`<li class="text-sm text-gray-300 bg-gray-800 rounded px-3 py-2">${{linkifyRefText(s)}}</li>`).join('');
         const prRows = prs.map(p=>`<tr class="border-b border-gray-800 hover:bg-gray-800/40">
           <td class="py-2 px-3"><a href="${{p.url}}" target="_blank" class="text-blue-400 hover:underline text-sm">${{(p.title||'').slice(0,70)}}</a></td>
+          <td class="py-2 px-3">${{prStatusBadge(p)}}</td>
           <td class="py-2 px-3">${{clfBadge(p.classification)}}</td>
           <td class="py-2 px-3 text-center font-mono text-sm">${{p.discussion_score.toFixed(1)}}</td>
           <td class="py-2 px-3 text-xs text-gray-400">${{(p.rationale||'').slice(0,120)}}</td>
@@ -536,7 +554,7 @@ async def job_page(job_id: str):
             <td class="py-2 px-3"><a href="${{href}}" target="_blank" class="text-blue-400 hover:underline text-sm">${{(p.title||'').slice(0,90)}}</a></td>
             <td class="py-2 px-3 text-xs text-gray-400">${{p.repo || ''}}</td>
             <td class="py-2 px-3 text-xs text-gray-400">#${{p.number || ''}}</td>
-            <td class="py-2 px-3 text-xs text-gray-400">${{p.state || ''}}</td>
+            <td class="py-2 px-3 text-xs text-gray-400">${{prStatusBadge(p)}}</td>
           </tr>`;
         }}).join('');
         function sortRepos(items, mode) {{
@@ -569,7 +587,7 @@ async def job_page(job_id: str):
           ${{prs.length?`<div class="bg-gray-900 border border-gray-700 rounded-xl overflow-hidden mb-6">
             <div class="px-4 py-3 border-b border-gray-700 font-semibold">PRs Analyzed</div>
             <table class="w-full text-sm"><thead><tr class="text-left text-xs text-gray-400 border-b border-gray-700">
-              <th class="py-2 px-3">Title</th><th class="py-2 px-3">Type</th><th class="py-2 px-3 text-center">Discussion</th><th class="py-2 px-3">Rationale</th>
+              <th class="py-2 px-3">Title</th><th class="py-2 px-3">Status</th><th class="py-2 px-3">Type</th><th class="py-2 px-3 text-center">Discussion</th><th class="py-2 px-3">Rationale</th>
             </tr></thead><tbody>${{prRows}}</tbody></table></div>`:''}}
           ${{allPrRows?`<div class="bg-gray-900 border border-gray-700 rounded-xl overflow-hidden mb-6">
             <div class="px-4 py-3 border-b border-gray-700 font-semibold">Recent Public PRs</div>
@@ -681,6 +699,7 @@ async def job_page(job_id: str):
           const strengths=(o.strengths||[]).map(s=>`<li class="text-sm text-gray-300 bg-gray-800 rounded px-3 py-2">${{linkifyRefText(s)}}</li>`).join('');
           const prRows=prs.map(p=>`<tr class="border-b border-gray-800">
             <td class="py-1.5 px-2"><a href="${{p.url}}" target="_blank" class="text-blue-400 hover:underline text-xs">${{p.title.slice(0,60)}}</a></td>
+            <td class="py-1.5 px-2">${{prStatusBadge(p)}}</td>
             <td class="py-1.5 px-2">${{clfBadge(p.classification)}}</td>
             <td class="py-1.5 px-2 font-mono text-xs text-center">${{p.discussion_score.toFixed(1)}}</td>
           </tr>`).join('');
@@ -695,7 +714,7 @@ async def job_page(job_id: str):
             ${{flags?'<h3 class="text-sm font-semibold mt-4 mb-2">Red Flags</h3><ul class="space-y-2 mb-3">'+flags+'</ul>':''}}
             ${{strengths?'<h3 class="text-sm font-semibold mt-3 mb-2">Strengths</h3><ul class="space-y-2 mb-3">'+strengths+'</ul>':''}}
             ${{prs.length?`<table class="w-full text-sm mt-2"><thead><tr class="text-left text-xs text-gray-400 border-b border-gray-700">
-              <th class="py-1.5 px-2">PR</th><th class="py-1.5 px-2">Type</th><th class="py-1.5 px-2">Score</th>
+              <th class="py-1.5 px-2">PR</th><th class="py-1.5 px-2">Status</th><th class="py-1.5 px-2">Type</th><th class="py-1.5 px-2">Score</th>
             </tr></thead><tbody>${{prRows}}</tbody></table>`:''}}
           `;
           document.getElementById('side-panel').classList.remove('translate-x-full');
