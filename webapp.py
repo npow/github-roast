@@ -346,7 +346,7 @@ async def job_page(job_id: str):
         if inp.get("repo", "").strip():
             share_path += f"?repo={quote_plus(inp.get('repo', '').strip())}"
         share_cta = f"""
-        <a href="{share_path}" class="text-xs text-white bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded transition">Share profile roast</a>
+        <button id="share-copy-btn" type="button" class="text-xs text-white bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded transition">Copy share link</button>
         """
     else:
         title_str = f"Bulk Rank: {inp.get('repo', '')} [{inp.get('label', '')}]"
@@ -411,6 +411,7 @@ async def job_page(job_id: str):
       const jobType = {json.dumps(job_type)};
       const currentStatus = {json.dumps(status)};
       const hasTargetRepo = {json.dumps(bool(inp.get("repo", "").strip()))};
+      const sharePath = {json.dumps(share_path if job_type == "single" else "")};
 
       const log = document.getElementById('log');
       const summary = document.getElementById('summary-content');
@@ -704,6 +705,28 @@ async def job_page(job_id: str):
           document.getElementById('side-panel').classList.add('translate-x-full');
           document.getElementById('overlay').classList.add('hidden');
         }};
+      }}
+
+      const shareBtn = document.getElementById('share-copy-btn');
+      if (shareBtn && sharePath) {{
+        shareBtn.addEventListener('click', async function() {{
+          const shareUrl = window.location.origin + sharePath;
+          try {{
+            await navigator.clipboard.writeText(shareUrl);
+          }} catch (_) {{
+            const ta = document.createElement('textarea');
+            ta.value = shareUrl;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+          }}
+          const prev = shareBtn.textContent;
+          shareBtn.textContent = 'Copied';
+          setTimeout(() => {{ shareBtn.textContent = prev; }}, 1200);
+        }});
       }}
 
       renderPhase();
