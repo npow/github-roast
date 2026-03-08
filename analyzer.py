@@ -13,27 +13,69 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-import anthropic
+import httpx
 
-RELAY_URL = os.getenv("ANTHROPIC_BASE_URL", "http://localhost:18082")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "unused")
-MODEL = "claude-sonnet-4-6"
-MAINTAINERS = {"npow", "romain-intel", "saikonen", "mt-ob", "dpoznik", "dependabot[bot]"}
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", os.getenv("ANTHROPIC_BASE_URL", "http://localhost:18082"))
+LLM_API_KEY = os.getenv("LLM_API_KEY", os.getenv("ANTHROPIC_API_KEY", "unused"))
+MODEL = os.getenv("LLM_MODEL", "gpt-5")
+MAINTAINERS = {
+    u.strip().lower()
+    for u in os.getenv("MAINTAINERS", "").split(",")
+    if u.strip()
+}
 
 GH_CACHE_TTL = 6 * 3600
 LLM_CACHE_TTL = 24 * 3600
 
 
-def _llm_client() -> anthropic.Anthropic:
-    return anthropic.Anthropic(base_url=RELAY_URL, api_key=ANTHROPIC_API_KEY)
+def _openai_base_url() -> str:
+    base = LLM_BASE_URL.rstrip("/")
+    if base.endswith("/v1"):
+        return base
+    return f"{base}/v1"
+
+
+def _extract_text_from_openai_message(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                parts.append(item.get("text", ""))
+        return "".join(parts)
+    return str(content or "")
+
+
+def _llm_chat_completion(prompt: str, *, max_tokens: int) -> str:
+    url = f"{_openai_base_url()}/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if LLM_API_KEY:
+        headers["Authorization"] = f"Bearer {LLM_API_KEY}"
+
+    payload = {
+        "model": MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max_tokens,
+    }
+    with httpx.Client(timeout=180) as client:
+        resp = client.post(url, headers=headers, json=payload)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"LLM HTTP {resp.status_code}: {resp.text[:240]}")
+        data = resp.json()
+    return _extract_text_from_openai_message(
+        (((data.get("choices") or [{}])[0]).get("message") or {}).get("content", "")
+    )
 
 
 def _is_retryable(exc: Exception) -> bool:
-    """True for 503 overloaded / rate-limit errors from Anthropic."""
-    if isinstance(exc, anthropic.APIStatusError) and exc.status_code in (503, 529, 429):
-        return True
+    """True for transient provider/network errors."""
     msg = str(exc).lower()
-    return "overloaded" in msg or "503" in msg or "rate_limit" in msg
+    if "http 429" in msg or "http 500" in msg or "http 502" in msg or "http 503" in msg or "http 504" in msg:
+        return True
+    if "timed out" in msg or "timeout" in msg or "connection reset" in msg:
+        return True
+    return "overloaded" in msg or "rate_limit" in msg
 
 
 def _llm_call_with_retry(fn, *args, max_retries: int = 5, base_delay: float = 5.0):
@@ -62,6 +104,15 @@ async def _gh_run(args: list[str]) -> str | None:
     if proc.returncode != 0:
         return None
     return stdout.decode().strip()
+
+
+async def ensure_gh_auth() -> None:
+    """Fail fast if gh CLI auth is unavailable for the current process user."""
+    ok = await _gh_run(["gh", "auth", "status"])
+    if not ok:
+        raise RuntimeError(
+            "GitHub CLI auth is unavailable. Run 'gh auth login' for the service user or set GH_TOKEN."
+        )
 
 
 async def gh_async(path: str, db, *, paginate: bool = True) -> dict | list:
@@ -742,11 +793,8 @@ Return JSON:
 }}
 Return only JSON, no markdown fences."""
 
-    resp = _llm_client().messages.create(
-        model=MODEL, max_tokens=512,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    text = re.sub(r"^```(?:json)?\n?", "", resp.content[0].text.strip())
+    raw = _llm_chat_completion(prompt, max_tokens=512)
+    text = re.sub(r"^```(?:json)?\n?", "", raw.strip())
     text = re.sub(r"\n?```$", "", text)
     return json.loads(text)
 
@@ -986,11 +1034,8 @@ Return JSON:
 
 Be direct and skeptical. A high PR count with a 0% merge rate is worse than 3 merged PRs. Return only JSON."""
 
-    resp = _llm_client().messages.create(
-        model=MODEL, max_tokens=1000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    text = re.sub(r"^```(?:json)?\n?", "", resp.content[0].text.strip())
+    raw = _llm_chat_completion(prompt, max_tokens=1000)
+    text = re.sub(r"^```(?:json)?\n?", "", raw.strip())
     text = re.sub(r"\n?```$", "", text)
     return json.loads(text)
 
@@ -1048,6 +1093,9 @@ async def analyze_single_user(
     async def emit(msg: str):
         await progress_queue.put({"type": "progress", "message": msg})
 
+    await emit("Checking GitHub CLI auth...")
+    await ensure_gh_auth()
+
     await emit(f"Fetching GitHub profile for {username}...")
     profile = await get_user_profile(username, db)
 
@@ -1090,6 +1138,7 @@ async def analyze_single_user(
         repo_median = await get_repo_median_merge_hours(repo, db)
 
         await emit(f"Fetching {len(pr_numbers)} PR(s) in parallel...")
+        await progress_queue.put({"type": "phase_totals", "fetch_total": len(pr_numbers), "llm_total": 0})
 
         async def _fetch_pr_with_progress(n):
             result = await get_pr_details(n, repo, db)
@@ -1100,6 +1149,7 @@ async def analyze_single_user(
             d for d in await asyncio.gather(*[_fetch_pr_with_progress(n) for n in pr_numbers])
             if d
         ]
+        await progress_queue.put({"type": "phase_totals", "fetch_total": len(pr_numbers), "llm_total": len(pr_details)})
 
         await emit(f"LLM: analyzing {len(pr_details)} PR(s) in parallel...")
 
@@ -1156,13 +1206,16 @@ async def analyze_bulk(
     async def emit(msg: str):
         await progress_queue.put({"type": "progress", "message": msg})
 
+    await emit("Checking GitHub CLI auth...")
+    await ensure_gh_auth()
+
     await emit(f"Fetching PRs with label '{label}' in {repo}...")
     items = await gh_search_async(f"repo:{repo}+label:{label}+is:pr", db)
 
     by_user: dict[str, list] = {}
     for item in items:
         user = item.get("user", {}).get("login", "")
-        if user and user not in MAINTAINERS and "[bot]" not in user:
+        if user and user.lower() not in MAINTAINERS and "[bot]" not in user:
             by_user.setdefault(user, []).append(item["number"])
 
     await emit(f"Found {len(by_user)} contributors: {', '.join(sorted(by_user.keys()))}")

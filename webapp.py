@@ -91,6 +91,8 @@ PAGE = """<!DOCTYPE html>
     color-scheme: light dark;
   }}
   body {{ font-family: ui-sans-serif, system-ui, sans-serif; }}
+  [data-theme="dark"] body {{ background:#030712; color:#f3f4f6; }}
+  [data-theme="light"] body {{ background:#f3f4f6; color:#0f172a; }}
   .badge-strong-yes  {{ background:#16a34a;color:#fff; }}
   .badge-yes         {{ background:#4ade80;color:#14532d; }}
   .badge-maybe       {{ background:#facc15;color:#713f12; }}
@@ -100,7 +102,7 @@ PAGE = """<!DOCTYPE html>
   .log-line          {{ font-family:ui-monospace,monospace;font-size:.8rem;color:#a3e635;padding:1px 0; }}
   @keyframes pdot    {{ 0%,100%{{opacity:1}}50%{{opacity:.3}} }}
   .pulse-dot         {{ animation:pdot 1.2s ease-in-out infinite;display:inline-block;width:8px;height:8px;border-radius:50%;background:#4ade80;margin-right:6px; }}
-  [data-theme="light"] .bg-gray-950 {{ background:#f8fafc !important; }}
+  [data-theme="light"] .bg-gray-950 {{ background:#f3f4f6 !important; }}
   [data-theme="light"] .bg-gray-900,
   [data-theme="light"] .bg-gray-900\\/50,
   [data-theme="light"] .bg-gray-900\\/60,
@@ -108,19 +110,29 @@ PAGE = """<!DOCTYPE html>
   [data-theme="light"] .bg-gray-800,
   [data-theme="light"] .bg-gray-800\\/40,
   [data-theme="light"] .bg-gray-800\\/50 {{ background:#ffffff !important; }}
+  [data-theme="light"] nav {{ background:#ffffff !important; }}
   [data-theme="light"] .border-gray-800,
   [data-theme="light"] .border-gray-700,
-  [data-theme="light"] .border-gray-600 {{ border-color:#d1d5db !important; }}
+  [data-theme="light"] .border-gray-600 {{ border-color:#cbd5e1 !important; }}
   [data-theme="light"] .text-gray-100,
-  [data-theme="light"] .text-gray-300 {{ color:#111827 !important; }}
+  [data-theme="light"] .text-gray-300 {{ color:#0f172a !important; }}
   [data-theme="light"] .text-gray-400,
-  [data-theme="light"] .text-gray-500 {{ color:#4b5563 !important; }}
+  [data-theme="light"] .text-gray-500 {{ color:#475569 !important; }}
+  [data-theme="light"] .text-blue-300,
+  [data-theme="light"] .text-blue-400 {{ color:#1d4ed8 !important; }}
+  [data-theme="light"] .text-red-400 {{ color:#b91c1c !important; }}
+  [data-theme="light"] .text-green-400 {{ color:#166534 !important; }}
+  [data-theme="light"] .bg-gray-700 {{ background:#e2e8f0 !important; color:#0f172a !important; }}
+  [data-theme="light"] .bg-blue-900\\/30 {{ background:#dbeafe !important; }}
   [data-theme="light"] input,
   [data-theme="light"] select,
   [data-theme="light"] textarea {{
     color:#111827 !important;
     background:#fff !important;
   }}
+  [data-theme="light"] a {{ color:#1d4ed8; }}
+  [data-theme="light"] a:hover {{ color:#1e40af; }}
+  [data-theme="light"] .log-line {{ color:#166534; }}
 </style>
 <script>
   (function() {{
@@ -351,6 +363,20 @@ async def job_page(job_id: str):
           <span id="pulse" class="pulse-dot" {'style="display:none"' if status in ("done","error") else ""}></span>
           <h2 class="font-semibold text-sm text-gray-300">Live Progress</h2>
         </div>
+        <div id="phase-progress" class="mb-3 space-y-2 text-xs">
+          <div>
+            <div class="flex justify-between text-gray-400 mb-1">
+              <span>PR fetch</span><span id="fetch-count">0/0</span>
+            </div>
+            <div class="h-1.5 bg-gray-700 rounded-full"><div id="fetch-bar" class="h-1.5 bg-blue-500 rounded-full" style="width:0%"></div></div>
+          </div>
+          <div>
+            <div class="flex justify-between text-gray-400 mb-1">
+              <span>LLM analysis</span><span id="llm-count">0/0</span>
+            </div>
+            <div class="h-1.5 bg-gray-700 rounded-full"><div id="llm-bar" class="h-1.5 bg-purple-500 rounded-full" style="width:0%"></div></div>
+          </div>
+        </div>
         <div id="log" class="h-80 overflow-y-auto bg-gray-950 rounded-lg p-3 space-y-0.5">
           {'<div class="log-line text-gray-500">Waiting...</div>' if status == "queued" else ""}
         </div>
@@ -376,6 +402,11 @@ async def job_page(job_id: str):
       const summary = document.getElementById('summary-content');
       const fullResults = document.getElementById('full-results');
       const pulse = document.getElementById('pulse');
+      const fetchBar = document.getElementById('fetch-bar');
+      const llmBar = document.getElementById('llm-bar');
+      const fetchCount = document.getElementById('fetch-count');
+      const llmCount = document.getElementById('llm-count');
+      const phaseState = {{ fetchDone: 0, fetchTotal: 0, llmDone: 0, llmTotal: 0 }};
 
       function addLog(msg) {{
         const d = document.createElement('div');
@@ -386,6 +417,14 @@ async def job_page(job_id: str):
       }}
 
       function stopPulse() {{ if (pulse) pulse.style.display = 'none'; }}
+      function renderPhase() {{
+        const fp = phaseState.fetchTotal > 0 ? Math.min(100, Math.round((phaseState.fetchDone / phaseState.fetchTotal) * 100)) : 0;
+        const lp = phaseState.llmTotal > 0 ? Math.min(100, Math.round((phaseState.llmDone / phaseState.llmTotal) * 100)) : 0;
+        fetchBar.style.width = fp + '%';
+        llmBar.style.width = lp + '%';
+        fetchCount.textContent = `${{phaseState.fetchDone}}/${{phaseState.fetchTotal}}`;
+        llmCount.textContent = `${{phaseState.llmDone}}/${{phaseState.llmTotal}}`;
+      }}
 
       function badge(rec) {{
         const cls = {{'strong yes':'badge-strong-yes','yes':'badge-yes','maybe':'badge-maybe','no':'badge-no','strong no':'badge-strong-no'}}[rec]||'badge-maybe';
@@ -405,6 +444,16 @@ async def job_page(job_id: str):
 
       function renderSingleSummary(data) {{
         const o = data.overall||{{}};
+        if ((o.executive_summary||'').startsWith('Error:')) {{
+          summary.innerHTML = `
+            <div class="rounded-lg border border-red-700 bg-red-950/40 p-3">
+              <div class="font-semibold text-red-300 mb-1">Analysis failed</div>
+              <p class="text-sm text-red-200">${{o.executive_summary}}</p>
+              <p class="text-xs text-gray-400 mt-2">Check GitHub CLI auth on the server (`gh auth status`).</p>
+            </div>
+          `;
+          return;
+        }}
         summary.innerHTML = `
           <div class="flex items-center gap-4 mb-3">
             <div class="text-4xl font-black">${{(o.overall_score||0).toFixed(1)}}</div>
@@ -582,6 +631,16 @@ async def job_page(job_id: str):
         es.addEventListener('message', function(e) {{
           const evt = JSON.parse(e.data);
           if (evt.type==='progress') addLog(evt.message);
+          else if (evt.type==='phase_totals') {{
+            if (typeof evt.fetch_total === 'number') phaseState.fetchTotal = evt.fetch_total;
+            if (typeof evt.llm_total === 'number') phaseState.llmTotal = evt.llm_total;
+            renderPhase();
+          }}
+          else if (evt.type==='sub_progress') {{
+            if (evt.phase==='fetch_prs') phaseState.fetchDone += 1;
+            if (evt.phase==='llm_prs') phaseState.llmDone += 1;
+            renderPhase();
+          }}
           else if (evt.type==='partial_result') renderBulkPartial(evt.data);
           else if (evt.type==='result') {{
             if (jobType==='single') {{ renderSingleSummary(evt.data); renderSingleFull(evt.data); }}
