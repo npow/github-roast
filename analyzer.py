@@ -8,6 +8,7 @@ Shared by webapp.py (async routes) and analyze.py (CLI via asyncio.run).
 import asyncio
 import json
 import re
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -23,6 +24,27 @@ LLM_CACHE_TTL = 24 * 3600
 
 def _llm_client() -> anthropic.Anthropic:
     return anthropic.Anthropic(base_url=RELAY_URL, api_key="unused")
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """True for 503 overloaded / rate-limit errors from Anthropic."""
+    if isinstance(exc, anthropic.APIStatusError) and exc.status_code in (503, 529, 429):
+        return True
+    msg = str(exc).lower()
+    return "overloaded" in msg or "503" in msg or "rate_limit" in msg
+
+
+def _llm_call_with_retry(fn, *args, max_retries: int = 5, base_delay: float = 5.0):
+    """Call fn(*args) synchronously, retrying on 503/overloaded with exponential backoff."""
+    for attempt in range(max_retries):
+        try:
+            return fn(*args)
+        except Exception as exc:
+            if _is_retryable(exc) and attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)
+                time.sleep(delay)
+                continue
+            raise
 
 
 # ── GitHub API helpers ────────────────────────────────────────────────────────
@@ -734,7 +756,7 @@ async def llm_analyze_pr(pr_detail: dict, repo_median_hours: float | None, db) -
         return cached
     try:
         result = await asyncio.get_event_loop().run_in_executor(
-            None, _llm_analyze_pr_sync, pr_detail, repo_median_hours
+            None, _llm_call_with_retry, _llm_analyze_pr_sync, pr_detail, repo_median_hours
         )
         await db.cache_set(cache_key, result, ttl=LLM_CACHE_TTL)
         return result
@@ -992,6 +1014,7 @@ async def llm_analyze_full_profile(
     try:
         result = await asyncio.get_event_loop().run_in_executor(
             None,
+            _llm_call_with_retry,
             _llm_analyze_full_profile_sync,
             username, profile, own_repos, deep_repos, all_prs, issues_filed,
             event_summary, target_repo_pr_analyses,
