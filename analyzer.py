@@ -1065,13 +1065,25 @@ async def analyze_single_user(
         repo_median = await get_repo_median_merge_hours(repo, db)
 
         await emit(f"Fetching {len(pr_numbers)} PR(s) in parallel...")
+
+        async def _fetch_pr_with_progress(n):
+            result = await get_pr_details(n, repo, db)
+            await progress_queue.put({"type": "sub_progress", "phase": "fetch_prs"})
+            return result
+
         pr_details = [
-            d for d in await asyncio.gather(*[get_pr_details(n, repo, db) for n in pr_numbers])
+            d for d in await asyncio.gather(*[_fetch_pr_with_progress(n) for n in pr_numbers])
             if d
         ]
 
         await emit(f"LLM: analyzing {len(pr_details)} PR(s) in parallel...")
-        llm_results = await asyncio.gather(*[llm_analyze_pr(d, repo_median, db) for d in pr_details])
+
+        async def _llm_pr_with_progress(d):
+            result = await llm_analyze_pr(d, repo_median, db)
+            await progress_queue.put({"type": "sub_progress", "phase": "llm_prs"})
+            return result
+
+        llm_results = await asyncio.gather(*[_llm_pr_with_progress(d) for d in pr_details])
         for detail, llm_result in zip(pr_details, llm_results):
             target_pr_analyses.append({
                 "number": detail["number"],

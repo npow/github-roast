@@ -105,6 +105,7 @@ async def run_single(username: str, repo: str | None, db: Database, quiet: bool)
     with _single_progress(quiet) as progress:
         task = progress.add_task(f"Analyzing {username}...", total=total_steps)
         remaining = list(milestone_patterns)
+        sub_tasks: dict[str, int] = {}  # phase -> task_id
 
         async def printer():
             while True:
@@ -115,7 +116,27 @@ async def run_single(username: str, repo: str | None, db: Database, quiet: bool)
                     if remaining and remaining[0].search(msg):
                         remaining.pop(0)
                         progress.advance(task)
+                    # Create sub-bar when we learn the count
+                    m = re.search(r"Fetching (\d+) PR\(s\) in parallel", msg)
+                    if m:
+                        n = int(m.group(1))
+                        sub_tasks["fetch_prs"] = progress.add_task(
+                            f"  Fetching PRs...", total=n
+                        )
+                    m = re.search(r"LLM: analyzing (\d+) PR\(s\) in parallel", msg)
+                    if m:
+                        n = int(m.group(1))
+                        sub_tasks["llm_prs"] = progress.add_task(
+                            f"  LLM: classifying PRs...", total=n
+                        )
+                elif event["type"] == "sub_progress":
+                    phase = event["phase"]
+                    if phase in sub_tasks:
+                        progress.advance(sub_tasks[phase])
                 elif event["type"] == "result":
+                    # Remove sub-bars and complete main bar
+                    for tid in sub_tasks.values():
+                        progress.remove_task(tid)
                     progress.update(task, description="Done!", completed=total_steps)
                     break
 
