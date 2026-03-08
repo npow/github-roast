@@ -75,6 +75,8 @@ def _is_retryable(exc: Exception) -> bool:
         return True
     if "timed out" in msg or "timeout" in msg or "connection reset" in msg:
         return True
+    if "connection refused" in msg:
+        return True
     return "overloaded" in msg or "rate_limit" in msg
 
 

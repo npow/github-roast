@@ -767,8 +767,13 @@ async def share_profile(
 
     clean_repo = repo.strip()
     existing = await db.find_latest_single_job(username=username, repo=clean_repo)
-    if existing and existing["status"] in {"queued", "running", "done"}:
-        return await job_page(existing["id"])
+    if existing:
+        status = existing.get("status")
+        result = existing.get("result") or {}
+        exec_summary = ((result.get("overall") or {}).get("executive_summary") or "").strip()
+        failed_done = status == "done" and exec_summary.startswith("Error:")
+        if status in {"queued", "running"} or (status == "done" and not failed_done):
+            return await job_page(existing["id"])
 
     input_data = {"username": username.strip(), "repo": clean_repo}
     job_id = await db.create_job("single", input_data)
