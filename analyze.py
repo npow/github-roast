@@ -5,14 +5,14 @@ Shares all logic with the webapp via analyzer.py.
 
 Usage:
   # Bulk: analyze all contributors with a label in a repo
-  python analyze.py --repo netflix/metaflow --label gsoc
+  python analyze.py --repo owner/repo --label your-label
 
   # Single user
-  python analyze.py --user npow --repo netflix/metaflow
+  python analyze.py --user npow --repo owner/repo
 
   # Output formats
-  python analyze.py --repo netflix/metaflow --label gsoc --format markdown
-  python analyze.py --repo netflix/metaflow --label gsoc --format json
+  python analyze.py --repo owner/repo --label your-label --format markdown
+  python analyze.py --repo owner/repo --label your-label --format json
 """
 
 import argparse

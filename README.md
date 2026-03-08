@@ -19,8 +19,8 @@ git clone https://github.com/npow/github-roast && cd github-roast && uv sync
 # Analyze any GitHub user
 github-roast torvalds
 
-# Rank a GSoC cohort
-github-roast --repo netflix/metaflow --label gsoc --output report.md
+# Rank a labeled cohort in any repo
+github-roast --repo owner/repo --label your-label --output report.md
 ```
 
 ## Install
@@ -45,13 +45,13 @@ github-roast torvalds --format json
 **Deep-dive with target repo** — adds in-depth PR analysis for a specific repo:
 
 ```bash
-github-roast npow --repo netflix/metaflow
+github-roast npow --repo owner/repo
 ```
 
 **Bulk ranking** — rank all contributors who opened a PR with a given label:
 
 ```bash
-github-roast --repo netflix/metaflow --label gsoc --output report.md
+github-roast --repo owner/repo --label your-label --output report.md
 ```
 
 Output includes a ranked table with merge rate, PRs/week, burst ratio, and trivial-PR rate — the key farming signals — followed by detailed profiles with actual PR discussion excerpts.

@@ -257,7 +257,7 @@ async def index():
           </div>
           <div>
             <label class="block text-xs text-gray-400 mb-1">Label</label>
-            <input name="label" type="text" value="gsoc" placeholder="e.g. gsoc"
+            <input name="label" type="text" value="contribution" placeholder="e.g. contribution"
               class="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
           </div>
           <button class="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 rounded-lg text-sm transition">
@@ -322,7 +322,7 @@ async def analyze_single(
 async def analyze_bulk_route(
     background_tasks: BackgroundTasks,
     repo: str = Form(""),
-    label: str = Form("gsoc"),
+    label: str = Form("contribution"),
 ):
     input_data = {"repo": repo.strip(), "label": label.strip()}
     job_id = await db.create_job("bulk", input_data)
