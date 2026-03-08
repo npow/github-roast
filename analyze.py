@@ -24,7 +24,7 @@ from datetime import datetime
 from pathlib import Path
 
 from rich.console import Console
-from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TextColumn
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TextColumn, TimeRemainingColumn
 
 from analyzer import analyze_bulk, analyze_single_user
 from db import Database
@@ -32,10 +32,13 @@ from db import Database
 DB_PATH = Path("gh_profiler.db")
 
 
-def _spinner(quiet: bool) -> Progress:
+def _single_progress(quiet: bool) -> Progress:
     return Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        BarColumn(bar_width=24),
+        MofNCompleteColumn(),
+        TimeRemainingColumn(),
         console=Console(stderr=True),
         disable=quiet,
     )
@@ -83,16 +86,37 @@ async def run_bulk(repo: str, label: str, db: Database, quiet: bool) -> list:
 async def run_single(username: str, repo: str | None, db: Database, quiet: bool) -> dict:
     q: asyncio.Queue = asyncio.Queue()
 
-    with _spinner(quiet) as progress:
-        task = progress.add_task(f"Analyzing {username}...", total=None)
+    # One step per major phase: events, repos, deep+PRs, signals, [fetch PRs, LLM PRs,] full LLM
+    total_steps = 6 if repo else 4
+
+    # Each pattern fires at most once (matched sequentially against seen messages)
+    milestone_patterns = [
+        re.compile(r"total_events|events,.*commits"),           # events summarized
+        re.compile(r"non-fork repos found"),                    # repos fetched
+        re.compile(r"repos deep-dived"),                        # deep + all PRs done
+        re.compile(r"Signals:"),                                # signals computed
+    ]
+    if repo:
+        milestone_patterns += [
+            re.compile(r"PR\(s\) in parallel"),                 # PR details fetched
+            re.compile(r"LLM: analyzing"),                      # per-PR LLM done
+        ]
+
+    with _single_progress(quiet) as progress:
+        task = progress.add_task(f"Analyzing {username}...", total=total_steps)
+        remaining = list(milestone_patterns)
 
         async def printer():
             while True:
                 event = await q.get()
                 if event["type"] == "progress":
-                    progress.update(task, description=event["message"])
+                    msg = event["message"]
+                    progress.update(task, description=msg)
+                    if remaining and remaining[0].search(msg):
+                        remaining.pop(0)
+                        progress.advance(task)
                 elif event["type"] == "result":
-                    progress.update(task, description=f"Done!")
+                    progress.update(task, description="Done!", completed=total_steps)
                     break
 
         t = asyncio.create_task(printer())
