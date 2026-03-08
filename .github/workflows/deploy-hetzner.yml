@@ -11,6 +11,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: ${{ github.repository_owner == 'npow' && vars.ENABLE_HETZNER_DEPLOY == 'true' }}
     runs-on: ubuntu-latest
     env:
       APP_DIR: /root/github-roast
