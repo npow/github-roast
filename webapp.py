@@ -503,6 +503,7 @@ async def job_page(job_id: str):
       function renderSingleFull(data) {{
         const o = data.overall||{{}};
         const prs = data.pr_analyses||[];
+        const allPrs = data.all_prs||[];
         const repos = data.own_repos||[];
         const flags = (o.red_flags||[]).map(f=>`<span class="badge bg-red-900 text-red-200">${{f}}</span>`).join(' ');
         const strengths = (o.strengths||[]).map(s=>`<span class="badge bg-green-900 text-green-200">${{s}}</span>`).join(' ');
@@ -512,6 +513,15 @@ async def job_page(job_id: str):
           <td class="py-2 px-3 text-center font-mono text-sm">${{p.discussion_score.toFixed(1)}}</td>
           <td class="py-2 px-3 text-xs text-gray-400">${{(p.rationale||'').slice(0,120)}}</td>
         </tr>`).join('');
+        const allPrRows = allPrs.slice(0, 20).map(p=>{{
+          const href = `https://github.com/${{p.repo}}/pull/${{p.number}}`;
+          return `<tr class="border-b border-gray-800 hover:bg-gray-800/40">
+            <td class="py-2 px-3"><a href="${{href}}" target="_blank" class="text-blue-400 hover:underline text-sm">${{(p.title||'').slice(0,90)}}</a></td>
+            <td class="py-2 px-3 text-xs text-gray-400">${{p.repo || ''}}</td>
+            <td class="py-2 px-3 text-xs text-gray-400">#${{p.number || ''}}</td>
+            <td class="py-2 px-3 text-xs text-gray-400">${{p.state || ''}}</td>
+          </tr>`;
+        }}).join('');
         function sortRepos(items, mode) {{
           const arr = [...items];
           if (mode === 'pushed') return arr.sort((a,b)=>Date.parse(b.pushed_at||0)-Date.parse(a.pushed_at||0));
@@ -544,6 +554,11 @@ async def job_page(job_id: str):
             <table class="w-full text-sm"><thead><tr class="text-left text-xs text-gray-400 border-b border-gray-700">
               <th class="py-2 px-3">Title</th><th class="py-2 px-3">Type</th><th class="py-2 px-3 text-center">Discussion</th><th class="py-2 px-3">Rationale</th>
             </tr></thead><tbody>${{prRows}}</tbody></table></div>`:''}}
+          ${{allPrRows?`<div class="bg-gray-900 border border-gray-700 rounded-xl overflow-hidden mb-6">
+            <div class="px-4 py-3 border-b border-gray-700 font-semibold">Recent Public PRs</div>
+            <table class="w-full text-sm"><thead><tr class="text-left text-xs text-gray-400 border-b border-gray-700">
+              <th class="py-2 px-3">Title</th><th class="py-2 px-3">Repo</th><th class="py-2 px-3">#</th><th class="py-2 px-3">State</th>
+            </tr></thead><tbody>${{allPrRows}}</tbody></table></div>`:''}}
           ${{repos.length?`<div class="bg-gray-900 border border-gray-700 rounded-xl p-4">
             <div class="flex items-center justify-between gap-3 mb-3">
               <h3 class="font-semibold">Own Repos</h3>
