@@ -286,7 +286,7 @@ async def job_page(job_id: str):
         summary.innerHTML = `
           <div class="flex items-center gap-4 mb-3">
             <div class="text-4xl font-black">${{(o.overall_score||0).toFixed(1)}}</div>
-            <div><div class="font-bold">${{data.username}}</div>${{badge(o.gsoc_recommendation||'?')}}</div>
+            <div><div class="font-bold">${{data.username}}</div>${{badge(o.recommendation||'?')}}</div>
           </div>
           ${{bar('Contribution Quality',o.contribution_quality||0)}}
           ${{bar('Portfolio Authenticity',o.portfolio_authenticity||0)}}
@@ -347,7 +347,7 @@ async def job_page(job_id: str):
         }}
         const row = document.createElement('div');
         row.className = 'flex items-center gap-3 py-1 border-b border-gray-800 text-sm';
-        row.innerHTML = `<span class="font-mono text-blue-300">${{data.username}}</span><span class="ml-auto font-bold">${{(o.overall_score||0).toFixed(1)}}</span>${{badge(o.gsoc_recommendation||'?')}}`;
+        row.innerHTML = `<span class="font-mono text-blue-300">${{data.username}}</span><span class="ml-auto font-bold">${{(o.overall_score||0).toFixed(1)}}</span>${{badge(o.recommendation||'?')}}`;
         partial.appendChild(row);
       }}
 
@@ -358,7 +358,7 @@ async def job_page(job_id: str):
         function buildTable() {{
           const filtered = sorted.filter(r=>{{
             const o = r.overall||{{}};
-            if (filterRec && o.gsoc_recommendation!==filterRec) return false;
+            if (filterRec && o.recommendation!==filterRec) return false;
             if (filterSearch && !r.username.toLowerCase().includes(filterSearch.toLowerCase())) return false;
             return true;
           }});
@@ -374,7 +374,7 @@ async def job_page(job_id: str):
                 <td class="py-2 px-3 text-gray-400">${{i+1}}</td>
                 <td class="py-2 px-3 font-mono text-blue-300"><a href="https://github.com/${{r.username}}" target="_blank" class="hover:underline">${{r.username}}</a></td>
                 <td class="py-2 px-3 font-bold font-mono">${{(o.overall_score||0).toFixed(1)}}</td>
-                <td class="py-2 px-3">${{badge(o.gsoc_recommendation||'?')}}</td>
+                <td class="py-2 px-3">${{badge(o.recommendation||'?')}}</td>
                 <td class="py-2 px-3 text-sm text-gray-400">${{(r.pr_analyses||[]).length}}</td>
                 <td class="py-2 px-3 text-xs text-gray-500 max-w-xs truncate">${{flags}}</td>
               </tr>`;
@@ -382,7 +382,7 @@ async def job_page(job_id: str):
           </table>`;
         }}
 
-        const recs = [...new Set(sorted.map(r=>r.overall?.gsoc_recommendation||'').filter(Boolean))];
+        const recs = [...new Set(sorted.map(r=>r.overall?.recommendation||'').filter(Boolean))];
         const chips = recs.map(r=>`<button onclick="setRec('${{r}}')" data-rec="${{r}}" class="rec-chip px-3 py-1 rounded-full text-xs border border-gray-600 hover:border-blue-400 transition">${{r}}</button>`).join('');
 
         fullResults.innerHTML = `
@@ -426,7 +426,7 @@ async def job_page(job_id: str):
           </tr>`).join('');
           document.getElementById('panel-body').innerHTML = `
             <h2 class="text-xl font-bold mb-1 mr-8"><a href="https://github.com/${{data.username}}" target="_blank" class="hover:text-blue-400">${{data.username}}</a></h2>
-            <div class="flex items-center gap-3 mb-4"><span class="text-3xl font-black">${{(o.overall_score||0).toFixed(1)}}</span>${{badge(o.gsoc_recommendation||'?')}}</div>
+            <div class="flex items-center gap-3 mb-4"><span class="text-3xl font-black">${{(o.overall_score||0).toFixed(1)}}</span>${{badge(o.recommendation||'?')}}</div>
             ${{bar('Contribution Quality',o.contribution_quality||0)}}
             ${{bar('Portfolio Authenticity',o.portfolio_authenticity||0)}}
             ${{bar('Discussion Depth',o.discussion_depth||0)}}

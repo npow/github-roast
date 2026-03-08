@@ -703,7 +703,7 @@ def _llm_analyze_pr_sync(pr_detail: dict, repo_median_hours: float | None) -> di
         else "not merged"
     )
 
-    prompt = f"""You are evaluating a GitHub PR contribution from a GSoC applicant.
+    prompt = f"""You are evaluating a GitHub PR contribution.
 
 PR: {pr_detail['title']}
 URL: {pr_detail['url']}
@@ -794,7 +794,7 @@ def _llm_analyze_full_profile_sync(
         )
     if sig.get("burst_ratio_pct", 0) > 70 and sig.get("total_prs", 0) >= 5:
         farming_warnings.append(
-            f"WARNING: {sig['burst_ratio_pct']}% of all PRs in last 90 days — suspicious GSoC-window burst."
+            f"WARNING: {sig['burst_ratio_pct']}% of all PRs in last 90 days — suspicious burst activity."
         )
     if sig.get("prs_per_week", 0) > 4:
         farming_warnings.append(
@@ -880,7 +880,7 @@ def _llm_analyze_full_profile_sync(
         social_parts.append(f"Location: {profile['location']}")
     social_str = " | ".join(social_parts) or "none listed"
 
-    prompt = f"""You are doing a deep, evidence-based GitHub assessment of '{username}' as a GSoC applicant.
+    prompt = f"""You are doing a deep, evidence-based GitHub assessment of '{username}'.
 Read ALL sections carefully, especially the farming signals and actual PR discussions.
 
 ══════════════════════════════════════════════════════════════════════
@@ -959,11 +959,11 @@ Key things to evaluate:
 3. Commit message quality: Are they descriptive and thoughtful, or generic "fix", "update", "Initial commit"?
 4. Real projects: Do READMEs describe working software? File trees match the claim? Tests, CI, real docs?
 5. Skill depth: Languages/frameworks across repos — superficial wrappers or real implementations?
-6. Burst activity: Sudden spike of PRs around GSoC application window is a major red flag.
+6. Burst activity: Sudden spike of PRs in a short window is a major red flag.
 7. Self-issued PRs: Self-filed issues with immediate same-day PRs = manufactured contributions.
 
 Scoring guidance:
-- 0% merge rate with many PRs → overall_score ≤ 3, gsoc_recommendation "no" or "strong no"
+- 0% merge rate with many PRs → overall_score ≤ 3, recommendation "no" or "strong no"
 - <20% merge rate → significant penalty, likely 3-5 range
 - Genuine OSS engagement with merged PRs and real discussions → can score 6-9
 - Account age alone does NOT compensate for farming signals
@@ -979,7 +979,7 @@ Return JSON:
   "executive_summary": <5-6 sentences: honest assessment citing specific repos/PRs/merge rate>,
   "red_flags": [<specific concerns with concrete evidence — cite PR numbers, repos, percentages>],
   "strengths": [<genuine positives with concrete evidence>],
-  "gsoc_recommendation": <"strong yes" | "yes" | "maybe" | "no" | "strong no">
+  "recommendation": <"strong yes" | "yes" | "maybe" | "no" | "strong no">
 }}
 
 Be direct and skeptical. A high PR count with a 0% merge rate is worse than 3 merged PRs. Return only JSON."""
@@ -1007,7 +1007,7 @@ async def llm_analyze_full_profile(
     pr_samples: list | None = None,
     commit_messages: list | None = None,
 ) -> dict:
-    cache_key = f"llmprofile3:{username}"
+    cache_key = f"llmprofile4:{username}"
     cached = await db.cache_get(cache_key)
     if cached is not None:
         return cached
@@ -1026,7 +1026,7 @@ async def llm_analyze_full_profile(
         return {
             "overall_score": 0, "activity_level": "unknown",
             "executive_summary": f"Error: {e}",
-            "red_flags": [], "strengths": [], "gsoc_recommendation": "no",
+            "red_flags": [], "strengths": [], "recommendation": "no",
         }
 
 

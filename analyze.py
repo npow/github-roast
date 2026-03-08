@@ -168,7 +168,7 @@ def render_markdown(results: list) -> str:
         lines.append(
             f"| {i} | [{r['username']}](https://github.com/{r['username']}) "
             f"| {o.get('overall_score', 0):.1f} "
-            f"| {o.get('gsoc_recommendation', '?')} "
+            f"| {o.get('recommendation', '?')} "
             f"| {sig.get('merge_rate_pct', '?')}% "
             f"| {sig.get('total_prs', len(r.get('all_prs', [])))} "
             f"| {sig.get('prs_per_week', '?')} "
@@ -189,7 +189,7 @@ def render_markdown(results: list) -> str:
         lines += [
             f"### [{u}](https://github.com/{u})",
             f"**Score:** {o.get('overall_score', 0):.1f}/10  |  "
-            f"**Recommendation:** {o.get('gsoc_recommendation', '?')}  |  "
+            f"**Recommendation:** {o.get('recommendation', '?')}  |  "
             f"**Activity:** {o.get('activity_level', '?')}",
             "",
             f"Account age: {p.get('account_age_days', '?')} days  |  "
