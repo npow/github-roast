@@ -77,6 +77,8 @@ def _is_retryable(exc: Exception) -> bool:
         return True
     if "connection refused" in msg:
         return True
+    if "expecting value: line 1 column 1" in msg or "invalid llm json" in msg or "empty llm response" in msg:
+        return True
     return "overloaded" in msg or "rate_limit" in msg
 
 
@@ -1043,9 +1045,14 @@ Return JSON:
 Be direct and skeptical. A high PR count with a 0% merge rate is worse than 3 merged PRs. Return only JSON."""
 
     raw = _llm_chat_completion(prompt, max_tokens=1000)
-    text = re.sub(r"^```(?:json)?\n?", "", raw.strip())
+    text = re.sub(r"^```(?:json)?\n?", "", (raw or "").strip())
     text = re.sub(r"\n?```$", "", text)
-    return json.loads(text)
+    if not text.strip():
+        raise RuntimeError("empty llm response")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"invalid llm json: {e}") from e
 
 
 async def llm_analyze_full_profile(
