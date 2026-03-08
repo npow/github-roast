@@ -589,15 +589,33 @@ def compute_activity_signals(all_prs: list, event_summary: dict, pr_sample_stats
     repos = {p["repo"] for p in all_prs if p.get("repo")}
 
     # PR size stats from sample
-    sizes = [s.get("total_lines", 0) for s in pr_sample_stats if not s.get("error")]
+    valid_samples = [s for s in pr_sample_stats if not s.get("error")]
+    sizes = [s.get("total_lines", 0) for s in valid_samples]
     avg_lines = sum(sizes) / len(sizes) if sizes else 0
-    trivial_count = sum(1 for s in pr_sample_stats if not s.get("error") and s.get("total_lines", 999) < 10)
-    trivial_rate = trivial_count / len(pr_sample_stats) if pr_sample_stats else 0
 
-    files = [s.get("changed_files", 0) for s in pr_sample_stats if not s.get("error")]
+    def _is_release_maintenance(s: dict) -> bool:
+        title = str(s.get("title", "") or "").lower()
+        merged = bool(s.get("merged"))
+        if not merged:
+            return False
+        return any(k in title for k in [
+            "bump", "version", "release", "changelog", "dependencies", "deps", "lockfile",
+        ])
+
+    maintenance_small = sum(
+        1 for s in valid_samples
+        if s.get("total_lines", 999) < 10 and _is_release_maintenance(s)
+    )
+    suspicious_small = sum(
+        1 for s in valid_samples
+        if s.get("total_lines", 999) < 10 and not _is_release_maintenance(s)
+    )
+    trivial_rate = suspicious_small / len(valid_samples) if valid_samples else 0
+
+    files = [s.get("changed_files", 0) for s in valid_samples]
     avg_files = sum(files) / len(files) if files else 0
 
-    rev_comments = [s.get("reviewer_comments", 0) for s in pr_sample_stats if not s.get("error")]
+    rev_comments = [s.get("reviewer_comments", 0) for s in valid_samples]
     avg_reviewer_comments = sum(rev_comments) / len(rev_comments) if rev_comments else 0
 
     return {
@@ -611,12 +629,122 @@ def compute_activity_signals(all_prs: list, event_summary: dict, pr_sample_stats
         "unique_repos": len(repos),
         "recent_90d_prs": len(recent_prs),
         "burst_ratio_pct": round(burst_ratio * 100, 1),
-        "sample_size": len(pr_sample_stats),
+        "sample_size": len(valid_samples),
         "avg_lines_changed": round(avg_lines, 1),
         "avg_files_changed": round(avg_files, 1),
         "trivial_pr_rate_pct": round(trivial_rate * 100, 1),
+        "maintenance_small_pr_count": maintenance_small,
         "avg_reviewer_comments": round(avg_reviewer_comments, 1),
     }
+
+
+def calibrate_maintainer_stewardship(
+    overall: dict,
+    profile: dict,
+    own_repos: list,
+    event_summary: dict,
+) -> dict:
+    """
+    Apply a mild, generic calibration for maintainer-like workflows that are
+    under-represented by PR-centric signals (frequent direct pushes to
+    high-impact repositories).
+    """
+    if not isinstance(overall, dict):
+        return overall
+    if str(overall.get("executive_summary", "")).startswith("Error:"):
+        return overall
+
+    max_stars = max((int(r.get("stars", 0) or 0) for r in own_repos), default=0)
+    push_events = int((event_summary.get("type_distribution") or {}).get("PushEvent", 0) or 0)
+    total_events = int(event_summary.get("total_events", 0) or 0)
+    push_ratio = (push_events / total_events) if total_events > 0 else 0.0
+    followers = int(profile.get("followers", 0) or 0)
+
+    maintainer_like = (
+        (max_stars >= 1000 and total_events >= 20 and push_ratio >= 0.6)
+        or (max_stars >= 10000 and total_events >= 8)
+        or (max_stars >= 1000 and followers >= 1000 and total_events >= 10)
+    )
+    if not maintainer_like:
+        return overall
+
+    adjusted = dict(overall)
+
+    def _bump(key: str, delta: float):
+        if isinstance(adjusted.get(key), (int, float)):
+            adjusted[key] = round(min(10.0, float(adjusted[key]) + delta), 1)
+
+    _bump("overall_score", 0.8)
+    _bump("contribution_quality", 0.5)
+    _bump("repo_quality", 0.8)
+
+    score = float(adjusted.get("overall_score", 0) or 0)
+    rec = str(adjusted.get("recommendation", "maybe"))
+    if rec == "maybe" and score >= 6.8:
+        adjusted["recommendation"] = "yes"
+    elif rec == "no" and score >= 6.0:
+        adjusted["recommendation"] = "maybe"
+
+    strengths = adjusted.get("strengths")
+    if not isinstance(strengths, list):
+        strengths = []
+    strengths.append(
+        "Maintainer-style stewardship signal: sustained push activity on high-impact repositories."
+    )
+    adjusted["strengths"] = strengths[:12]
+    return adjusted
+
+
+def calibrate_signal_consistency(overall: dict, activity_signals: dict) -> dict:
+    """
+    Stabilize recommendation/score against explicit quantitative signals so
+    scores are less sensitive to LLM variance.
+    """
+    if not isinstance(overall, dict):
+        return overall
+    if str(overall.get("executive_summary", "")).startswith("Error:"):
+        return overall
+
+    adjusted = dict(overall)
+    score = float(adjusted.get("overall_score", 0) or 0)
+    merge = float(activity_signals.get("merge_rate_pct", 0) or 0)
+    trivial = float(activity_signals.get("trivial_pr_rate_pct", 0) or 0)
+    reviewer = float(activity_signals.get("avg_reviewer_comments", 0) or 0)
+    orgs = int(activity_signals.get("unique_orgs", 0) or 0)
+    merged_n = int(activity_signals.get("merged_prs", 0) or 0)
+    total = int(activity_signals.get("total_prs", 0) or 0)
+
+    if merge >= 70 and trivial <= 25 and reviewer >= 1:
+        score += 0.4
+    if orgs >= 3 and merged_n >= 10:
+        score += 0.3
+    if total >= 10 and merge < 20:
+        score -= 0.8
+    if total >= 10 and merge < 40 and trivial > 55:
+        score -= 0.5
+
+    score = max(0.0, min(10.0, score))
+    adjusted["overall_score"] = round(score, 1)
+
+    if isinstance(adjusted.get("contribution_quality"), (int, float)):
+        cq = float(adjusted["contribution_quality"])
+        if merge >= 70:
+            cq += 0.3
+        if merge < 30 and total >= 10:
+            cq -= 0.4
+        adjusted["contribution_quality"] = round(max(0.0, min(10.0, cq)), 1)
+
+    rec = str(adjusted.get("recommendation", "maybe"))
+    if score >= 8.5:
+        adjusted["recommendation"] = "strong yes"
+    elif score >= 6.8 and rec in {"maybe", "no"}:
+        adjusted["recommendation"] = "yes"
+    elif score >= 5.5 and rec == "no":
+        adjusted["recommendation"] = "maybe"
+    elif score < 3.0:
+        adjusted["recommendation"] = "strong no"
+
+    return adjusted
 
 
 def extract_commit_messages(events: list) -> list[str]:
@@ -848,17 +976,21 @@ def _llm_analyze_full_profile_sync(
         farming_warnings.append(
             f"CRITICAL: Only {sig['merge_rate_pct']}% of PRs merged — strong indicator of PR spam."
         )
-    if sig.get("trivial_pr_rate_pct", 0) > 40:
+    if sig.get("trivial_pr_rate_pct", 0) > 60:
         farming_warnings.append(
-            f"CRITICAL: {sig['trivial_pr_rate_pct']}% of sampled PRs are trivial (<10 lines) — copy-paste spam."
+            f"CRITICAL: {sig['trivial_pr_rate_pct']}% of sampled PRs are tiny/non-maintenance changes (<10 lines) — possible PR farming."
         )
-    if sig.get("burst_ratio_pct", 0) > 70 and sig.get("total_prs", 0) >= 5:
+    elif sig.get("trivial_pr_rate_pct", 0) > 40:
         farming_warnings.append(
-            f"WARNING: {sig['burst_ratio_pct']}% of all PRs in last 90 days — suspicious burst activity."
+            f"WARNING: {sig['trivial_pr_rate_pct']}% of sampled PRs are tiny/non-maintenance changes (<10 lines)."
         )
-    if sig.get("prs_per_week", 0) > 4:
+    if sig.get("burst_ratio_pct", 0) > 70 and sig.get("total_prs", 0) >= 5 and sig.get("merge_rate_pct", 100) < 50:
         farming_warnings.append(
-            f"WARNING: {sig['prs_per_week']:.1f} PRs/week is unsustainably high for real contributions."
+            f"WARNING: {sig['burst_ratio_pct']}% of all PRs in last 90 days with weak merge outcomes — suspicious burst activity."
+        )
+    if sig.get("prs_per_week", 0) > 4 and sig.get("merge_rate_pct", 100) < 50:
+        farming_warnings.append(
+            f"WARNING: {sig['prs_per_week']:.1f} PRs/week with weak merge outcomes can indicate low-signal volume."
         )
     if sig.get("avg_reviewer_comments", 10) < 1 and sig.get("total_prs", 0) >= 5:
         farming_warnings.append(
@@ -954,7 +1086,8 @@ PR statistics (all public PRs found):
 
 PR quality (sampled {sig.get('sample_size', 0)} PRs, one per repo):
   Avg PR size: {sig.get('avg_lines_changed', 0)} lines, {sig.get('avg_files_changed', 0)} files
-  Trivial PRs (<10 lines): {sig.get('trivial_pr_rate_pct', 0)}%
+  Tiny non-maintenance PRs (<10 lines, merged release chores excluded): {sig.get('trivial_pr_rate_pct', 0)}%
+  Small merged maintenance PRs (version/release/deps/changelog): {sig.get('maintenance_small_pr_count', 0)}
   Avg reviewer engagement: {sig.get('avg_reviewer_comments', 0)} reviewer comments per PR
 
 Automated warnings:
@@ -1014,7 +1147,8 @@ ASSESSMENT INSTRUCTIONS
 Produce a thorough, evidence-based assessment. Use the actual PR discussion threads above.
 
 Key things to evaluate:
-1. FARMING vs genuine: Low merge rate + trivial diffs + no reviewer engagement = PR farming. Weight this VERY heavily.
+1. FARMING vs genuine: Low merge rate + tiny non-maintenance diffs + no reviewer engagement = PR farming. Weight this heavily.
+   Do NOT over-penalize merged release/maintenance chores (version bumps, changelog, dependency updates) when they are accepted by maintainers.
 2. Discussion quality: In the sampled PRs, does the author engage with maintainer feedback? Do maintainers respond at all?
 3. Commit message quality: Are they descriptive and thoughtful, or generic "fix", "update", "Initial commit"?
 4. Real projects: Do READMEs describe working software? File trees match the claim? Tests, CI, real docs?
@@ -1191,6 +1325,8 @@ async def analyze_single_user(
         username, profile, own_repos, deep_repos, all_prs, issues_filed, event_summary, target_pr_analyses, db,
         activity_signals=activity_signals, pr_samples=pr_samples, commit_messages=commit_messages,
     )
+    overall = calibrate_maintainer_stewardship(overall, profile, own_repos, event_summary)
+    overall = calibrate_signal_consistency(overall, activity_signals)
 
     result = {
         "username": username,
@@ -1296,6 +1432,8 @@ async def analyze_bulk(
                 username, profile, own_repos, deep_repos, all_prs, issues_filed, event_summary, target_pr_analyses, db,
                 activity_signals=activity_signals, pr_samples=pr_samples, commit_messages=commit_messages,
             )
+            overall = calibrate_maintainer_stewardship(overall, profile, own_repos, event_summary)
+            overall = calibrate_signal_consistency(overall, activity_signals)
 
             user_result = {
                 "username": username,
