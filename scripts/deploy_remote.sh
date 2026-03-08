@@ -13,6 +13,15 @@ CADDY_CONTAINER="${CADDY_CONTAINER:-recon-caddy-1}"
 
 cd "$APP_DIR"
 
+if ! curl -fsS "${CLIPROXY_BASE_URL%/}/" >/dev/null 2>&1; then
+  if command -v docker >/dev/null 2>&1; then
+    CLIPROXY_IP="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' recon-cliproxy-1 2>/dev/null || true)"
+    if [[ -n "${CLIPROXY_IP}" ]]; then
+      CLIPROXY_BASE_URL="http://${CLIPROXY_IP}:8317"
+    fi
+  fi
+fi
+
 python3 -m venv .venv
 . .venv/bin/activate
 pip install --upgrade pip
@@ -20,10 +29,12 @@ pip install fastapi uvicorn anthropic httpx python-multipart
 
 cat > .env.production <<ENV
 ANTHROPIC_BASE_URL=$CLIPROXY_BASE_URL
+LLM_BASE_URL=$CLIPROXY_BASE_URL
 ENV
 
 if [[ -n "$CLIPROXY_API_KEY" ]]; then
   echo "ANTHROPIC_API_KEY=$CLIPROXY_API_KEY" >> .env.production
+  echo "LLM_API_KEY=$CLIPROXY_API_KEY" >> .env.production
 fi
 
 if [[ -n "$GH_TOKEN" ]]; then
@@ -39,6 +50,8 @@ After=network.target
 Type=simple
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$APP_DIR/.env.production
+Environment=HOME=/root
+Environment=XDG_CONFIG_HOME=/root/.config
 ExecStart=$APP_DIR/.venv/bin/uvicorn webapp:app --host 0.0.0.0 --port $APP_PORT
 Restart=always
 RestartSec=3
