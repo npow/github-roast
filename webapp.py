@@ -193,14 +193,20 @@ async def index():
     recent = await db.list_recent_jobs(limit=12)
     recent_items = []
     for job in recent:
-        job_id = job["id"]
         kind = "Single" if job["type"] == "single" else "Cohort"
         if job["type"] == "single":
-            target = job["input"].get("username", "unknown")
+            username = (job["input"].get("username", "") or "unknown").strip()
+            repo = (job["input"].get("repo", "") or "").strip()
+            href = f"/{username}"
+            if repo:
+                href += f"?repo={quote_plus(repo)}"
+            target = username
         else:
+            job_id = job["id"]
+            href = f"/job/{job_id}"
             target = f"{job['input'].get('repo', '')} [{job['input'].get('label', '')}]"
         recent_items.append(
-            f"<a href='/job/{job_id}' class='block px-3 py-2 rounded border border-gray-700 hover:bg-gray-800/40'>"
+            f"<a href='{href}' class='block px-3 py-2 rounded border border-gray-700 hover:bg-gray-800/40'>"
             f"<div class='text-sm font-semibold'>{target}</div>"
             f"<div class='text-xs text-gray-400'>{kind} · {job['status']} · {job['created_at'][:19]}Z</div>"
             "</a>"
@@ -305,7 +311,10 @@ async def analyze_single(
     input_data = {"username": username.strip(), "repo": repo.strip()}
     job_id = await db.create_job("single", input_data)
     background_tasks.add_task(run_job, job_id, "single", input_data)
-    return RedirectResponse(f"/job/{job_id}", status_code=303)
+    share_path = f"/{input_data['username']}"
+    if input_data["repo"]:
+        share_path += f"?repo={quote_plus(input_data['repo'])}"
+    return RedirectResponse(share_path, status_code=303)
 
 
 @app.post("/analyze/bulk")
@@ -451,7 +460,7 @@ async def job_page(job_id: str):
             <div class="rounded-lg border border-red-700 bg-red-950/40 p-3">
               <div class="font-semibold text-red-300 mb-1">Analysis failed</div>
               <p class="text-sm text-red-200">${{o.executive_summary}}</p>
-              <p class="text-xs text-gray-400 mt-2">Check GitHub CLI auth on the server (`gh auth status`).</p>
+              <p class="text-xs text-gray-400 mt-2">Check GitHub CLI auth on the server (gh auth status).</p>
             </div>
           `;
           return;
