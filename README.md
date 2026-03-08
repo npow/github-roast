@@ -1,6 +1,6 @@
 # gh-roast
 
-[![CI](https://github.com/npow/gh-roast/actions/workflows/ci.yml/badge.svg)](https://github.com/npow/gh-roast/actions/workflows/ci.yml)
+[![CI](https://github.com/npow/github-roast/actions/workflows/ci.yml/badge.svg)](https://github.com/npow/github-roast/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
@@ -27,7 +27,7 @@ python analyze.py --repo netflix/metaflow --user someuser
 
 ```bash
 # Clone and install deps with uv
-git clone https://github.com/npow/gh-roast
+git clone https://github.com/npow/github-roast
 cd gh-roast
 uv sync
 
@@ -84,7 +84,7 @@ The `gh` CLI handles GitHub auth — no tokens to manage.
 ## Development
 
 ```bash
-git clone https://github.com/npow/gh-roast
+git clone https://github.com/npow/github-roast
 cd gh-roast
 uv sync
 gh auth login   # if not already authenticated
