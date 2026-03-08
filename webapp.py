@@ -6,6 +6,7 @@ Uses the `gh` CLI for all GitHub API calls (no OAuth needed).
 import asyncio
 import json
 import re
+from datetime import datetime, timedelta, timezone
 from typing import AsyncIterator
 from urllib.parse import quote_plus
 
@@ -772,7 +773,15 @@ async def share_profile(
         result = existing.get("result") or {}
         exec_summary = ((result.get("overall") or {}).get("executive_summary") or "").strip()
         failed_done = status == "done" and exec_summary.startswith("Error:")
-        if status in {"queued", "running"} or (status == "done" and not failed_done):
+        updated_at = existing.get("updated_at") or existing.get("created_at")
+        is_fresh = False
+        if updated_at:
+            try:
+                ts = datetime.fromisoformat(str(updated_at).replace("Z", "+00:00"))
+                is_fresh = ts >= (datetime.now(timezone.utc) - timedelta(hours=24))
+            except Exception:
+                is_fresh = False
+        if status in {"queued", "running"} or (status == "done" and not failed_done and is_fresh):
             return await job_page(existing["id"])
 
     input_data = {"username": username.strip(), "repo": clean_repo}
