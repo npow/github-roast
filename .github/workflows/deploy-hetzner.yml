@@ -2,7 +2,7 @@ name: Deploy Hetzner
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
