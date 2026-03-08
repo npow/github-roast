@@ -35,7 +35,7 @@ DB_PATH = Path("gh_profiler.db")
 def _make_progress(quiet: bool) -> Progress:
     return Progress(
         SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}", no_wrap=False),
+        TextColumn("[progress.description]{task.description}"),
         BarColumn(bar_width=24),
         MofNCompleteColumn(),
         console=Console(stderr=True),
