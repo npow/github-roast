@@ -389,6 +389,7 @@ async def job_page(job_id: str):
             <div class="h-1.5 bg-gray-700 rounded-full"><div id="llm-bar" class="h-1.5 bg-purple-500 rounded-full" style="width:0%"></div></div>
           </div>
         </div>
+        <div id="phase-note" class="mb-3 text-xs text-gray-500 hidden"></div>
         <div id="log" class="h-80 overflow-y-auto bg-gray-950 rounded-lg p-3 space-y-0.5">
           {'<div class="log-line text-gray-500">Waiting...</div>' if status == "queued" else ""}
         </div>
@@ -409,6 +410,7 @@ async def job_page(job_id: str):
       const jobId = {json.dumps(job_id)};
       const jobType = {json.dumps(job_type)};
       const currentStatus = {json.dumps(status)};
+      const hasTargetRepo = {json.dumps(bool(inp.get("repo", "").strip()))};
 
       const log = document.getElementById('log');
       const summary = document.getElementById('summary-content');
@@ -418,6 +420,8 @@ async def job_page(job_id: str):
       const llmBar = document.getElementById('llm-bar');
       const fetchCount = document.getElementById('fetch-count');
       const llmCount = document.getElementById('llm-count');
+      const phaseProgress = document.getElementById('phase-progress');
+      const phaseNote = document.getElementById('phase-note');
       const phaseState = {{ fetchDone: 0, fetchTotal: 0, llmDone: 0, llmTotal: 0 }};
 
       function addLog(msg) {{
@@ -436,6 +440,23 @@ async def job_page(job_id: str):
         llmBar.style.width = lp + '%';
         fetchCount.textContent = `${{phaseState.fetchDone}}/${{phaseState.fetchTotal}}`;
         llmCount.textContent = `${{phaseState.llmDone}}/${{phaseState.llmTotal}}`;
+
+        const hasDetailedPhases = phaseState.fetchTotal > 0 || phaseState.llmTotal > 0;
+        if (hasDetailedPhases) {{
+          phaseProgress.classList.remove('hidden');
+          phaseNote.classList.add('hidden');
+          return;
+        }}
+
+        phaseProgress.classList.add('hidden');
+        phaseNote.classList.remove('hidden');
+        if (!hasTargetRepo) {{
+          phaseNote.textContent = 'Detailed PR phase is only shown when a target repo is specified.';
+        }} else if (currentStatus === 'done') {{
+          phaseNote.textContent = 'No target-repo PRs found for this user.';
+        }} else {{
+          phaseNote.textContent = 'Waiting to discover target-repo PRs...';
+        }}
       }}
 
       function badge(rec) {{
