@@ -976,11 +976,12 @@ def _llm_analyze_full_profile_sync(
         farming_warnings.append(
             f"CRITICAL: Only {sig['merge_rate_pct']}% of PRs merged — strong indicator of PR spam."
         )
-    if sig.get("trivial_pr_rate_pct", 0) > 60:
+    sample_n = int(sig.get("sample_size", 0) or 0)
+    if sample_n >= 15 and sig.get("trivial_pr_rate_pct", 0) > 60:
         farming_warnings.append(
             f"CRITICAL: {sig['trivial_pr_rate_pct']}% of sampled PRs are tiny/non-maintenance changes (<10 lines) — possible PR farming."
         )
-    elif sig.get("trivial_pr_rate_pct", 0) > 40:
+    elif sample_n >= 15 and sig.get("trivial_pr_rate_pct", 0) > 40:
         farming_warnings.append(
             f"WARNING: {sig['trivial_pr_rate_pct']}% of sampled PRs are tiny/non-maintenance changes (<10 lines)."
         )
@@ -1086,7 +1087,7 @@ PR statistics (all public PRs found):
 
 PR quality (sampled {sig.get('sample_size', 0)} PRs, one per repo):
   Avg PR size: {sig.get('avg_lines_changed', 0)} lines, {sig.get('avg_files_changed', 0)} files
-  Tiny non-maintenance PRs (<10 lines, merged release chores excluded): {sig.get('trivial_pr_rate_pct', 0)}%
+  Tiny non-maintenance PRs in sample (<10 lines, merged release chores excluded): {sig.get('trivial_pr_rate_pct', 0)}%
   Small merged maintenance PRs (version/release/deps/changelog): {sig.get('maintenance_small_pr_count', 0)}
   Avg reviewer engagement: {sig.get('avg_reviewer_comments', 0)} reviewer comments per PR
 
