@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/npow/github-roast/actions/workflows/ci.yml/badge.svg)](https://github.com/npow/github-roast/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/) [![Docs](https://img.shields.io/badge/docs-mintlify-18a34a?style=flat-square)](https://mintlify.com/npow/github-roast)
 
 Rank and vet OSS contributors in minutes — detects PR farming, analyzes real engagement, and gives you a scored report.
 
