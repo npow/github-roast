@@ -521,6 +521,20 @@ async def get_pr_sample_stats(all_prs: list, db) -> list:
             1 for c in (comments if isinstance(comments, list) else [])
             if (c.get("user") or {}).get("login", "") != author_login
         )
+        review_list = reviews if isinstance(reviews, list) else []
+        meaningful_states = {"CHANGES_REQUESTED", "COMMENTED"}
+        nontrivial_review_bodies = 0
+        for r in review_list:
+            body = (r.get("body") or "").strip().lower()
+            if len(body) < 20:
+                continue
+            if any(tok in body for tok in ("lgtm", "looks good", "nice work", "thanks")):
+                continue
+            nontrivial_review_bodies += 1
+        meaningful_interaction = reviewer_comments > 0 and (
+            any((r.get("state") or "") in meaningful_states for r in review_list)
+            or nontrivial_review_bodies > 0
+        )
 
         result = {
             "repo": repo,
@@ -535,6 +549,8 @@ async def get_pr_sample_stats(all_prs: list, db) -> list:
             "total_lines": pr_data.get("additions", 0) + pr_data.get("deletions", 0),
             "reviewer_comments": reviewer_comments,
             "review_states": [r.get("state") for r in (reviews if isinstance(reviews, list) else [])],
+            "meaningful_interaction": meaningful_interaction,
+            "nontrivial_review_bodies": nontrivial_review_bodies,
             "thread": "\n".join(thread_parts)[:2000],
         }
         await db.cache_set(cache_key, result, ttl=GH_CACHE_TTL)
@@ -617,6 +633,13 @@ def compute_activity_signals(all_prs: list, event_summary: dict, pr_sample_stats
 
     rev_comments = [s.get("reviewer_comments", 0) for s in valid_samples]
     avg_reviewer_comments = sum(rev_comments) / len(rev_comments) if rev_comments else 0
+    substantive_count = sum(
+        1 for s in valid_samples
+        if s.get("total_lines", 0) >= 30 or s.get("changed_files", 0) >= 3
+    )
+    meaningful_interaction_count = sum(1 for s in valid_samples if s.get("meaningful_interaction"))
+    substantive_rate = substantive_count / len(valid_samples) if valid_samples else 0
+    meaningful_interaction_rate = meaningful_interaction_count / len(valid_samples) if valid_samples else 0
 
     return {
         "total_prs": total_prs,
@@ -635,6 +658,8 @@ def compute_activity_signals(all_prs: list, event_summary: dict, pr_sample_stats
         "trivial_pr_rate_pct": round(trivial_rate * 100, 1),
         "maintenance_small_pr_count": maintenance_small,
         "avg_reviewer_comments": round(avg_reviewer_comments, 1),
+        "substantive_sample_rate_pct": round(substantive_rate * 100, 1),
+        "meaningful_interaction_rate_pct": round(meaningful_interaction_rate * 100, 1),
     }
 
 
@@ -710,11 +735,13 @@ def calibrate_signal_consistency(overall: dict, activity_signals: dict) -> dict:
     merge = float(activity_signals.get("merge_rate_pct", 0) or 0)
     trivial = float(activity_signals.get("trivial_pr_rate_pct", 0) or 0)
     reviewer = float(activity_signals.get("avg_reviewer_comments", 0) or 0)
+    meaningful = float(activity_signals.get("meaningful_interaction_rate_pct", 0) or 0)
+    substantive = float(activity_signals.get("substantive_sample_rate_pct", 0) or 0)
     orgs = int(activity_signals.get("unique_orgs", 0) or 0)
     merged_n = int(activity_signals.get("merged_prs", 0) or 0)
     total = int(activity_signals.get("total_prs", 0) or 0)
 
-    if merge >= 70 and trivial <= 25 and reviewer >= 1:
+    if merge >= 70 and trivial <= 25 and reviewer >= 1 and meaningful >= 35:
         score += 0.4
     if orgs >= 3 and merged_n >= 10:
         score += 0.3
@@ -722,6 +749,8 @@ def calibrate_signal_consistency(overall: dict, activity_signals: dict) -> dict:
         score -= 0.8
     if total >= 10 and merge < 40 and trivial > 55:
         score -= 0.5
+    if meaningful < 25 and substantive < 40:
+        score -= 0.4
 
     score = max(0.0, min(10.0, score))
     adjusted["overall_score"] = round(score, 1)
@@ -735,9 +764,9 @@ def calibrate_signal_consistency(overall: dict, activity_signals: dict) -> dict:
         adjusted["contribution_quality"] = round(max(0.0, min(10.0, cq)), 1)
 
     rec = str(adjusted.get("recommendation", "maybe"))
-    if score >= 8.5:
+    if score >= 8.5 and meaningful >= 40 and substantive >= 45:
         adjusted["recommendation"] = "strong yes"
-    elif score >= 6.8 and rec in {"maybe", "no"}:
+    elif score >= 6.8 and meaningful >= 30 and substantive >= 35 and rec in {"maybe", "no"}:
         adjusted["recommendation"] = "yes"
     elif score >= 5.5 and rec == "no":
         adjusted["recommendation"] = "maybe"
@@ -993,6 +1022,10 @@ def _llm_analyze_full_profile_sync(
         farming_warnings.append(
             f"WARNING: {sig['prs_per_week']:.1f} PRs/week with weak merge outcomes can indicate low-signal volume."
         )
+    if sig.get("meaningful_interaction_rate_pct", 100) < 30 and sig.get("sample_size", 0) >= 6:
+        farming_warnings.append(
+            f"WARNING: Only {sig['meaningful_interaction_rate_pct']}% of sampled PRs show meaningful reviewer dialogue."
+        )
     if sig.get("avg_reviewer_comments", 10) < 1 and sig.get("total_prs", 0) >= 5:
         farming_warnings.append(
             f"WARNING: avg {sig['avg_reviewer_comments']:.1f} reviewer comments per PR — maintainers not engaging."
@@ -1090,6 +1123,8 @@ PR quality (sampled {sig.get('sample_size', 0)} PRs, one per repo):
   Tiny non-maintenance PRs in sample (<10 lines, merged release chores excluded): {sig.get('trivial_pr_rate_pct', 0)}%
   Small merged maintenance PRs (version/release/deps/changelog): {sig.get('maintenance_small_pr_count', 0)}
   Avg reviewer engagement: {sig.get('avg_reviewer_comments', 0)} reviewer comments per PR
+  Substantive sampled PRs: {sig.get('substantive_sample_rate_pct', 0)}%
+  Meaningful reviewer interaction in sample: {sig.get('meaningful_interaction_rate_pct', 0)}%
 
 Automated warnings:
 {farming_warnings_str}
@@ -1148,7 +1183,7 @@ ASSESSMENT INSTRUCTIONS
 Produce a thorough, evidence-based assessment. Use the actual PR discussion threads above.
 
 Key things to evaluate:
-1. FARMING vs genuine: Low merge rate + tiny non-maintenance diffs + no reviewer engagement = PR farming. Weight this heavily.
+1. FARMING vs genuine: Low merge rate + tiny non-maintenance diffs + lack of meaningful reviewer dialogue = PR farming. Weight this heavily.
    Do NOT over-penalize merged release/maintenance chores (version bumps, changelog, dependency updates) when they are accepted by maintainers.
 2. Discussion quality: In the sampled PRs, does the author engage with maintainer feedback? Do maintainers respond at all?
 3. Commit message quality: Are they descriptive and thoughtful, or generic "fix", "update", "Initial commit"?
